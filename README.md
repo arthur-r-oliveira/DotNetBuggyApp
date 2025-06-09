@@ -4,7 +4,7 @@
 
 - [DotNet Memory Leak App](#dotnet-memory-leak-app)
   - [Table of Contents](#table-of-contents)
-  - [1. Project Overview](#1-project-overview)
+  - [1. Repository Overview](#1-repository-overview)
   - [2. Key Features](#2-key-features)
   - [3. Motivation](#3-motivation)
   - [4. Deployment Guide (OpenShift / MicroShift)](#4-deployment-guide-openshift--microshift)
@@ -29,9 +29,9 @@
   - [9. License](#9-license)
 ---
 
-## 1. Project Overview
+## 1. Repository Overview
 
-This project presents a `.NET` web service specifically engineered to **simulate, monitor, and analyze memory leaks** within a containerized environment. Designed for deployment on platforms like **OpenShift** and **MicroShift**, it provides a robust framework for understanding `.NET` memory management in cloud-native settings. The application is configured to automatically generate crash dumps upon encountering Out-Of-Memory (OOM) conditions, facilitating in-depth post-mortem analysis.
+This repository does contains a `.NET` web service specifically engineered to **simulate, monitor, and analyze memory leaks** within a containerized environment. Designed for deployment on platforms like **OpenShift** and **MicroShift**, it provides a robust framework for understanding `.NET` memory management in cloud-native settings. The application is configured to automatically generate crash dumps upon encountering Out-Of-Memory (OOM) conditions, facilitating in-depth post-mortem analysis.
 
 ## 2. Key Features
 
@@ -43,7 +43,7 @@ This project presents a `.NET` web service specifically engineered to **simulate
 
 ## 3. Motivation
 
-Effective memory management is paramount for application stability and performance. This project aims to:
+Effective memory management is paramount for application stability and performance. This repository aims to:
 
 * **Provide a controlled, reproducible environment** to observe and understand `.NET` memory leak behavior in containers.
 * **Enable practical crash dump analysis** for debugging `.NET` applications in cloud-native environments, aligning with Microsoft's diagnostic recommendations for `.NET` apps on Containers.

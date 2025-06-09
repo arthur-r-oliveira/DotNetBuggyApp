@@ -1,0 +1,79 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dotnet-app-role
+  namespace: dotnet-memory-leak-app
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dotnet-app-rolebinding
+  namespace: dotnet-memory-leak-app
+subjects:
+  - kind: ServiceAccount
+    name: dotnet-app-sa
+roleRef:
+  kind: Role
+  name: dotnet-app-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dotnet-app-clusterrole
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "persistentvolumes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dotnet-app-clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: dotnet-app-sa
+    namespace: dotnet-memory-leak-app
+roleRef:
+  kind: ClusterRole
+  name: dotnet-app-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: dotnet-scc
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - SYS_PTRACE
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+fsGroup:
+  type: MustRunAs
+  ranges:
+    - min: 1000160000
+      max: 1000169999
+users:
+  - system:serviceaccount:dotnet-memory-leak-app:dotnet-app-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dotnet-app-privileged-scc-binding # A unique name for this binding
+subjects:
+  - kind: ServiceAccount
+    name: dotnet-app-sa
+    namespace: dotnet-memory-leak-app
+roleRef:
+  kind: ClusterRole
+  name: privileged # Bind to the cluster's default 'privileged' SCC
+  apiGroup: rbac.authorization.k8s.io

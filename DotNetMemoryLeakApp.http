@@ -1,0 +1,6 @@
+@DotNetMemoryLeakApp_HostAddress = http://localhost:5043
+
+GET {{DotNetMemoryLeakApp_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

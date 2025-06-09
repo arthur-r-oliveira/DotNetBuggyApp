@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-memory-leak-app
+  namespace: dotnet-memory-leak-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dotnet-memory-leak-app
+  template:
+    metadata:
+      labels:
+        app: dotnet-memory-leak-app
+    spec:
+      shareProcessNamespace: true
+      serviceAccountName: dotnet-app-sa
+      # Removed top-level securityContext here as it might conflict with SCCs for runAsUser/NonRoot
+      # securityContext:
+      #   runAsNonRoot: true
+      volumes:
+        - name: dump-storage
+          persistentVolumeClaim:
+            claimName: dotnet-memory-leak-dumps
+      containers:
+        - name: dotnet-app
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          command: ["/bin/sh", "-c"]
+          args:
+            - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll
+          ports:
+            - containerPort: 8881
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8881"
+            - name: COMPlus_DbgEnableElfDumpOnCrash
+              value: "1"
+            - name: COMPlus_DbgCrashDumpType
+              value: "3"
+            - name: COMPlus_DbgMiniDumpName
+              value: "/app/dumps/dump.dmp"
+            - name: TMPDIR
+              value: "/app/dumps/tmp"
+          volumeMounts:
+            - mountPath: /app/dumps
+              name: dump-storage
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+        - name: diagnostic-tools-sidecar
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          command: ["/bin/sh", "-c"]
+          args:
+            - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec sleep infinity
+          env:
+            - name: TMPDIR
+              value: "/app/dumps/tmp"
+          volumeMounts:
+            - mountPath: /app/dumps
+              name: dump-storage
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

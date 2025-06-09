@@ -16,8 +16,9 @@
     - [5.2. Monitoring Application Logs](#52-monitoring-application-logs)
     - [5.3. Collecting Crash Dumps](#53-collecting-crash-dumps)
       - [5.3.1. Option A: Automatic OOM Dumps (Recommended \& Most Reliable)](#531-option-a-automatic-oom-dumps-recommended--most-reliable)
-      - [5.3.2. Option B: On-Demand Dumps via Diagnostic Sidecar](#532-option-b-on-demand-dumps-via-diagnostic-sidecar)
-      - [5.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#533-option-c-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+      - [5.3.2. Option B: On-Demand Dumps via Tools Embedded in Application Image](#532-option-b-on-demand-dumps-via-tools-embedded-in-application-image)
+      - [5.3.3. Option C: On-Demand Dumps via Diagnostic Sidecar](#533-option-c-on-demand-dumps-via-diagnostic-sidecar)
+      - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security Policies (PSP / PSA / SCC)](#61-pod-security-policies-psp--psa--scc)
     - [6.2. SYS\_PTRACE Capability](#62-sys_ptrace-capability)
@@ -192,9 +193,67 @@ oc cp "$POD_NAME":/app/dumps/dump.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
 ~~~
 
 Optional: Analyze the dump locally using dotnet-dump
-dotnet-dump analyze ./crash_dump.dmp
 
-#### 5.3.2. Option B: On-Demand Dumps via Diagnostic Sidecar
+~~~
+dotnet-dump analyze ./crash_dump.dmp
+~~~
+
+#### 5.3.2. Option B: On-Demand Dumps via Tools Embedded in Application Image
+
+This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
+
+Configuration:
+
+Your `Containerfile` or `Dockerfile` must be adapted to install the .NET diagnostic tools alongside your application code. This is typically done by installing them as global tools.
+
+Example Containerfile layer:
+
+~~~
+# Install .NET diagnostic tools
+RUN dotnet tool install --global dotnet-dump --version 8.*
+RUN dotnet tool install --global dotnet-trace --version 8.*
+RUN dotnet tool install --global dotnet-counters --version 8.*
+
+# Add the tools to the PATH
+ENV PATH="${PATH}:/root/.dotnet/tools"
+~~~
+
+Our `Containerfile` in this repository does already include that changes. To make this workflow simpler, we are using the same image in all options here by now.
+
+**Workflow:**
+
+- Gain shell access to the running application container.
+- Identify the application's process ID (PID).
+- Execute dotnet-dump to collect the dump and save it to the shared volume.
+
+Example Commands:
+
+~~~
+# 1. Get the pod name
+export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+
+# 2. Access the application container's shell
+# Note: We are targeting the main 'dotnet-app' container
+oc rsh -c dotnet-app "$POD_NAME"
+
+# 3. Inside the container, find the main app's PID (usually PID 1)
+ps -ef
+
+# 4. Collect a dump of the application (replace <PID> with the actual PID)
+dotnet-dump collect --process-id <PID> -o /app/dumps/app_collected_dump.dmp
+
+# 5. Exit the container's shell
+exit
+~~~
+
+**Cons of this Approach:**
+
+- **Larger Image Size:** Including the SDK or diagnostic tools in your final application image increases its size. This goes against the best practice of keeping production images as lean as possible, leading to slower deployment times and higher storage costs.
+- **Increased Attack Surface:** Every tool and library added to your production image is a potential vector for security vulnerabilities. A minimal image with only the necessary runtime and application code is more secure.
+- **Immutable Tooling:** The diagnostic tools are version-locked with the application image. If a new, critical version of dotnet-dump is released, you must rebuild and redeploy the entire application image to update it. Other methods, like sidecars or ephemeral containers, allow for more flexible tool versioning.
+- **Requires a Shell:** This method depends on having a shell (e.g., /bin/sh or /bin/bash) available in the production container, which is often discouraged from a security perspective.
+
+#### 5.3.3. Option C: On-Demand Dumps via Diagnostic Sidecar
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 
 Configuration:
@@ -231,7 +290,7 @@ dotnet-dump collect --process-id <PID> -o /app/dumps/sidecar_collected_dump.dmp
 exit
 ~~~
 
-#### 5.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
+#### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
 How it works:

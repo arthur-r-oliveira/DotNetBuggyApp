@@ -1,0 +1,23 @@
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/-",
+    "value": {
+      "name": "debugger",
+      "image": "quay.io/rhn_support_arolivei/dotnet-debug:v1",
+      "command": ["sleep", "infinity"],
+      "env": [
+        {
+          "name": "TMPDIR",
+          "value": "/app/dumps/tmp"
+        }
+      ],
+      "volumeMounts": [
+        {
+          "mountPath": "/app/dumps",
+          "name": "dump-storage"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,19 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /app
+
+# The user/group setup can be specific to your needs, this is an example
+RUN chown 1001:0 /app
+
+# Switch to root to install tools
+USER root
+
+# Correctly install the .NET 8 versions of the diagnostic tools
+RUN mkdir -p /app/tools && chown 1001:0 /app/tools && \
+    dotnet tool install --tool-path /app/tools dotnet-dump --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-gcdump --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-trace --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-counters --version "8.*"
+
+# Switch back to the non-root user
+USER 1001

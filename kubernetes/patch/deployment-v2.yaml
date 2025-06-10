@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-memory-leak-app
+  namespace: dotnet-memory-leak-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dotnet-memory-leak-app
+  template:
+    metadata:
+      labels:
+        app: dotnet-memory-leak-app
+    spec:
+      shareProcessNamespace: true
+      serviceAccountName: dotnet-app-sa
+      volumes:
+        - name: dump-storage # The PVC is all we need
+          persistentVolumeClaim:
+            claimName: dotnet-memory-leak-dumps
+      containers:
+        - name: dotnet-app
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          # This command creates a tmp dir on the PVC and then runs the app
+          command: ["/bin/sh", "-c"]
+          args:
+            - "mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll"
+          ports:
+            - containerPort: 8881
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8881"
+            - name: TMPDIR
+              value: "/app/dumps/tmp" # Point TMPDIR to the PVC subdirectory
+          volumeMounts:
+            - mountPath: /app/dumps # Mount the PVC
+              name: dump-storage
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"

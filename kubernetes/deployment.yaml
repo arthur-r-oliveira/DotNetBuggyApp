@@ -22,6 +22,8 @@ spec:
         - name: dump-storage
           persistentVolumeClaim:
             claimName: dotnet-memory-leak-dumps
+        - name: diag-socket # Define the shared volume
+          emptyDir: {}
       containers:
         - name: dotnet-app
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
@@ -40,10 +42,12 @@ spec:
             - name: COMPlus_DbgMiniDumpName
               value: "/app/dumps/dump.dmp"
             - name: TMPDIR
-              value: "/app/dumps/tmp"
+              value: "/tmp"
           volumeMounts:
             - mountPath: /app/dumps
               name: dump-storage
+            - name: diag-socket # Mount the shared volume
+              mountPath: /tmp
           resources:
             requests:
               cpu: "500m"

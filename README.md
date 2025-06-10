@@ -15,9 +15,9 @@
     - [5.1. Triggering a Memory Leak](#51-triggering-a-memory-leak)
     - [5.2. Monitoring Application Logs](#52-monitoring-application-logs)
     - [5.3. Collecting Crash Dumps](#53-collecting-crash-dumps)
-      - [5.3.1. Option A: Automatic OOM Dumps (Recommended \& Most Reliable)](#531-option-a-automatic-oom-dumps-recommended--most-reliable)
-      - [5.3.2. Option B: On-Demand Dumps via Tools Embedded in Application Image](#532-option-b-on-demand-dumps-via-tools-embedded-in-application-image)
-      - [5.3.3. Option C: On-Demand Dumps via Diagnostic Sidecar](#533-option-c-on-demand-dumps-via-diagnostic-sidecar)
+      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image)
+      - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
+      - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security Policies (PSP / PSA / SCC)](#61-pod-security-policies-psp--psa--scc)
@@ -164,41 +164,7 @@ fail: Program[0]
 ### 5.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 5.3.1. Option A: Automatic OOM Dumps (Recommended & Most Reliable)
-This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception.
-
-Configuration:
-
-COMPlus_DbgEnableElfDumpOnCrash=1: Enables ELF crash dump generation.
-COMPlus_DbgCrashDumpType=3: Specifies a "full" dump.
-COMPlus_DbgMiniDumpName=/app/dumps/dump.dmp: Sets the output path.
-These variables are pre-configured in your deployment.yaml.
-The /app/dumps directory is backed by a PersistentVolumeClaim to ensure persistence.
-Workflow:
-
-Trigger the memory leak.
-Allow the application to run until it crashes (you'll see restarts in oc get pods).
-Once the pod crashes and restarts, a dump file named dump.dmp (or similar, like core.<PID>) will be present in the /app/dumps volume.
-Example Commands (after application crashes and restarts):
-
-~~~
-# Get the name of a running pod (it might be a new instance after restart)
-export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-
-# Verify the dump file exists (replace with your actual pod name)
-oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
-
-# Copy the dump file from the pod to your local machine for analysis
-oc cp "$POD_NAME":/app/dumps/dump.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
-~~~
-
-Optional: Analyze the dump locally using dotnet-dump
-
-~~~
-dotnet-dump analyze ./crash_dump.dmp
-~~~
-
-#### 5.3.2. Option B: On-Demand Dumps via Tools Embedded in Application Image
+#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image
 
 This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
 
@@ -253,44 +219,153 @@ exit
 - **Immutable Tooling:** The diagnostic tools are version-locked with the application image. If a new, critical version of dotnet-dump is released, you must rebuild and redeploy the entire application image to update it. Other methods, like sidecars or ephemeral containers, allow for more flexible tool versioning.
 - **Requires a Shell:** This method depends on having a shell (e.g., /bin/sh or /bin/bash) available in the production container, which is often discouraged from a security perspective.
 
-#### 5.3.3. Option C: On-Demand Dumps via Diagnostic Sidecar
-This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
+
+#### 5.3.2. Option B: Automatic OOM Dumps
+This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The cons with this approach is an increased surface of attack, with the introduction diagnostic tools as mentioned before. 
 
 Configuration:
 
-Your deployment.yaml includes a diagnostic-tools-sidecar container that:
-Shares the pod's process namespace (shareProcessNamespace: true at pod spec level).
-Mounts the shared /app/dumps volume.
-Has .NET diagnostic tools baked into its image.
-Has TMPDIR=/app/dumps/tmp set, and the tmp directory is created at runtime with chmod 777 for writability.
-Security: This approach typically requires the sidecar to have the CAP_SYS_PTRACE capability. Due to strict PodSecurity policies (like restricted), you might need to bind your ServiceAccount to a highly permissive SCC (e.g., privileged).
+- The base OCI does include .NET tools, like `dotnet-dump`, embeeded together with the application runtime. 
+- These variables are pre-configured in your deployment.yaml:
+  - COMPlus_DbgEnableElfDumpOnCrash=1: Enables ELF crash dump generation.
+  - COMPlus_DbgCrashDumpType=3: Specifies a "full" dump.
+  - COMPlus_DbgMiniDumpName=/app/dumps/dump.dmp: Sets the output path.
+- The /app/dumps directory is backed by a PersistentVolumeClaim to ensure persistence.
+
 Workflow:
+- Trigger the memory leak.
+- Allow the application to run until it crashes (you'll see restarts in oc get pods).
+- Once the pod crashes and restarts, a dump file named dump.dmp (or similar, like core.<PID>) will be present in the /app/dumps volume.
 
-Ensure your deployment.yaml and rbac.yaml are configured as discussed (including shareProcessNamespace: true and the privileged SCC binding for your ServiceAccount).
-Access the sidecar container's shell.
-Identify the main application's process ID.
-Run dotnet-dump collect.
-Example Commands:
-
+Example Commands (after application crashes and restarts):
 ~~~
-# 1. Get the pod name
+# Get the name of a running pod (it might be a new instance after restart)
 export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
 
-# 2. Access the sidecar container's shell
-oc rsh -c diagnostic-tools-sidecar "$POD_NAME"
+# Verify the dump file exists (replace with your actual pod name)
+oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
 
-# 3. Inside the sidecar, find the main app's PID (usually PID 1, or another low number)
-#    (You might need to run: mount -t proc proc /proc first if ps -ef fails)
+# Copy the dump file from the pod to your local machine for analysis
+oc cp "$POD_NAME":/app/dumps/dump.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
+~~~
+
+Optional: Analyze the dump locally using dotnet-dump
+
+~~~
+dotnet-dump analyze ./crash_dump.dmp
+~~~
+
+#### 5.3.3. Option C: On-Demand Sidecar via Deployment Patching
+This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
+It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
+
+Step 1: Build the Correct Debug Image
+Create a Containerfile that starts from the correct .NET SDK version and installs the version-matched diagnostic tools. This image will be used for the on-demand sidecar.
+
+~~~
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /app
+
+# The user/group setup should match your environment's requirements
+RUN chown 1001:0 /app
+
+# Switch to root to install tools
+USER root
+
+# Install the .NET 8 versions of the diagnostic tools into a specific path
+RUN mkdir -p /app/tools && chown 1001:0 /app/tools && \
+    dotnet tool install --tool-path /app/tools dotnet-dump --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-gcdump --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-trace --version "8.*" && \
+    dotnet tool install --tool-path /app/tools dotnet-counters --version "8.*"
+
+# Switch back to the non-root user
+USER 1001
+~~~
+
+Build this image and push it to your internal container registry (e.g., quay.io/rhn_support_arolivei/dotnet-debug:v1).
+
+Step 2: Prepare Patch Files
+Create two JSON patch files. One to add the debugger and one to remove it.
+
+add-sidecar.json:
+~~~
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/-",
+    "value": {
+      "name": "debugger",
+      "image": "quay.io/rhn_support_arolivei/dotnet-debug:v1",
+      "command": ["sleep", "infinity"],
+      "env": [
+        {
+          "name": "TMPDIR",
+          "value": "/app/dumps/tmp"
+        }
+      ],
+      "volumeMounts": [
+        {
+          "mountPath": "/app/dumps",
+          "name": "dump-storage"
+        }
+      ]
+    }
+  }
+]
+~~~
+
+remove-sidecar.json:
+~~~
+[
+  {
+    "op": "remove",
+    "path": "/spec/template/spec/containers/1"
+  }
+]
+~~~
+
+
+Step 3: Execute the Debugging Workflow
+Ensure your application is running using its base Deployment configuration.
+Patch the Deployment to add the sidecar. This triggers a rolling update.
+
+~~~
+oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json --patch-file add-sidecar.json
+~~~
+
+Wait for the new pod to be ready (it will show 2/2 containers).
+~~~
+oc get pods -n dotnet-memory-leak-app --watch
+~~~
+
+Exec into the debugger sidecar:
+~~~
+export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -n dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+oc exec -it "$POD_NAME" -n dotnet-memory-leak-app -c debugger -- /bin/bash
+~~~
+
+Collect the dump. Because you are in the same pod, you can see the application's process and use its PID.
+
+~~~
+# Inside the debugger shell, find the process ID
 ps -ef
 
-# 4. Collect a dump of the main application (replace <PID> with the actual PID)
-dotnet-dump collect --process-id <PID> -o /app/dumps/sidecar_collected_dump.dmp
+# Use the PID (e.g., 2) to collect the dump with the version-matched tool
+/app/tools/dotnet-dump collect -p 2 -o /app/dumps/dump_SUCCESS.dmp
+~~~
 
-# 5. Exit the sidecar shell
-exit
+Remove the sidecar. After collecting the dump, patch the deployment again to remove the debug container and return to the original, hardened state.
+
+~~~
+oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json --patch-file remove-sidecar.json
 ~~~
 
 #### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
+
+(**WORKING IN PROGRESS**, _Enabling ephemeral containers in a MicroShift cluster requires modifying its configuration to activate the EphemeralContainers feature gate. This is done by editing MicroShift's central configuration file and then restarting the service._)
+
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
 How it works:

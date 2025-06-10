@@ -21,7 +21,7 @@
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
     - [5.4. Limits \& LimitaRanges](#54-limits--limitaranges)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
-    - [6.1. Pod Security Policies (PSP / PSA / SCC)](#61-pod-security-policies-psp--psa--scc)
+    - [6.1. Pod Security](#61-pod-security)
     - [6.2. SYS\_PTRACE Capability](#62-sys_ptrace-capability)
     - [6.3. seccompProfile](#63-seccompprofile)
     - [6.4. TMPDIR and IPC Issues](#64-tmpdir-and-ipc-issues)
@@ -485,11 +485,13 @@ By applying a LimitRange to your namespaces, you create a powerful safety net th
 ## 6. Security & Troubleshooting Considerations
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.
 
-### 6.1. Pod Security Policies (PSP / PSA / SCC)
-OpenShift/MicroShift/Kubernetes clusters enforce security through mechanisms like Pod Security Policies (PSP - deprecated in K8s, still used in older OpenShift), Pod Security Admission (PSA), and Security Context Constraints (SCC - OpenShift specific). These policies define what actions a pod is allowed to perform.
+### 6.1. Pod Security
 
-Your cluster likely has a default PodSecurity "restricted" policy or similar SCCs that are highly secure.
-These policies may block certain securityContext settings in your deployment.yaml, leading to Warning: would violate PodSecurity or Error creating: pods ... is forbidden.
+Kubernetes environments, including OpenShift and MicroShift, utilize powerful security enforcement mechanisms to govern pod behavior and permissions. These are primarily implemented through policies such as Security Context Constraints (SCCs), which are specific to OpenShift, and the Kubernetes-native Pod Security Admission (PSA).
+
+In a hardened cluster, it is common for a default, restrictive security policy to be applied at the namespace or cluster level. Such policies rigorously control the security-sensitive attributes a pod can request in its specification.
+
+Consequently, if the securityContext defined in a deployment manifest includes settings that are disallowed by the active policy (for example, attempting to run as a specific user ID or requesting certain capabilities), the Kubernetes API server will reject the configuration. This typically results in an error during deployment, with messages such as Warning: would violate PodSecurity or Error creating: pods "..." is forbidden: violates PodSecurity "restricted".
 
 ### 6.2. SYS_PTRACE Capability
 Requirement: Tools like dotnet-dump collect need the CAP_SYS_PTRACE capability to attach to another process and inspect its memory.

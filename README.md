@@ -408,7 +408,7 @@ dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dm
 
 ### 5.4. Limits & LimitaRanges
 
-n a Kubernetes environment, managing compute resources like CPU and Memory is not just a best practice; it is critical for ensuring application performance and cluster stability. This is especially true for single-node deployments like MicroShift and self-contained air-gapped systems.
+In a Kubernetes environment, managing compute resources like CPU and Memory is not just a best practice; it is critical for ensuring application performance and cluster stability. This is especially true for single-node deployments like MicroShift and self-contained air-gapped systems.
 
 What are Resource Requests and Limits?
 When defining a Pod, you can specify resource requests and limits for each of its containers:

@@ -19,6 +19,7 @@
       - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
       - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+    - [5.4. Limits \& LimitaRanges](#54-limits--limitaranges)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security Policies (PSP / PSA / SCC)](#61-pod-security-policies-psp--psa--scc)
     - [6.2. SYS\_PTRACE Capability](#62-sys_ptrace-capability)
@@ -404,6 +405,82 @@ ps -ef
 # 4. Collect a dump of the main application (replace <PID> with the actual PID)
 dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
 ~~~
+
+### 5.4. Limits & LimitaRanges
+
+n a Kubernetes environment, managing compute resources like CPU and Memory is not just a best practice; it is critical for ensuring application performance and cluster stability. This is especially true for single-node deployments like MicroShift and self-contained air-gapped systems.
+
+What are Resource Requests and Limits?
+When defining a Pod, you can specify resource requests and limits for each of its containers:
+
+- **Requests**: This is the amount of CPU and Memory that Kubernetes guarantees for a container. The Kubernetes scheduler uses this value to decide where to place the Pod, ensuring it only runs on a node with enough available capacity.
+- **Limits**: This is the maximum amount of CPU and Memory a container is allowed to use.
+  - If a container exceeds its Memory limit, it is terminated by the kernel (an "Out of Memory" or OOMKill).
+  - If a container exceeds its CPU limit, it is "throttled," meaning its CPU usage is artificially capped, which can degrade its performance.
+
+YAML
+~~~
+# Example snippet for a container's spec
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "250m" # 250 millicores (0.25 of a core)
+  limits:
+    memory: "128Mi"
+    cpu: "500m" # 500 millicores (0.5 of a core)
+~~~
+
+**Why This is Critical for a MicroShift / Single-Node Cluster**
+In a multi-node cluster, a single "runaway" application might crash one worker node, but the cluster and other applications remain operational. In a single-node cluster like MicroShift, the node is the "cluster".
+
+- Preventing Node Starvation: If a single container without limits consumes all available Memory or CPU, it can starve the node's critical system processes, including the kubelet and the underlying operating system. This can cause the node to enter a NotReady state, effectively bringing down the entire cluster and making it unresponsive.
+- Protecting the Control Plane: MicroShift runs its control plane components (like the API server) on the same single node. Enforcing limits on your applications ensures they cannot disrupt the resources needed by the control plane, thereby protecting the stability and availability of the cluster itself.
+- Ensuring Quality of Service (QoS): By setting resource requests, you tell Kubernetes which Pods are more important. Pods with guaranteed resources (Guaranteed QoS class) are the last to be killed if the node runs out of memory, ensuring your critical applications survive.
+
+**Why This is Critical in an Air-Gapped Environment**
+An air-gapped environment has a fixed, finite amount of hardware resources.
+
+- Inability to Scale Out: Unlike a cloud environment where you can automatically provision more nodes in response to high load, an air-gapped system cannot be easily expanded. You must work within the physical constraints of your hardware.
+- Enforcing Capacity Management: Limits are your primary tool for enforcing capacity management. They prevent any single application or team from consuming a disproportionate share of the fixed resources, which could cause a cascading failure of other essential services running in the same environment.
+
+**Putting it into Practice: The LimitRange Object**
+Defining requests and limits for every Pod manually can be tedious. Kubernetes provides a policy object called LimitRange that you can apply to a namespace to enforce sane defaults and constraints.
+
+A LimitRange can:
+- Assign default request and limit values to containers that do not define their own.
+- Enforce minimum and maximum values for CPU and Memory.
+- Enforce a ratio between requests and limits.
+
+Example limitrange.yaml:
+This LimitRange enforces that every container in the namespace will get default resources if not specified, and it prevents any single container from requesting too much.
+
+~~~
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: resource-limits-for-namespace
+spec:
+  limits:
+  - type: Container
+    # Default resource request for any container created without one.
+    defaultRequest:
+      cpu: "100m"
+      memory: "64Mi"
+    # Default resource limit for any container created without one.
+    default:
+      cpu: "500m"
+      memory: "256Mi"
+    # Maximum resource limit any container in the namespace is allowed to have.
+    max:
+      cpu: "1"         # 1 full core
+      memory: "1Gi"
+    # Minimum resource limit any container in the namespace is allowed to have.
+    min:
+      cpu: "50m"
+      memory: "32Mi"
+~~~
+
+By applying a LimitRange to your namespaces, you create a powerful safety net that significantly improves the stability and predictability of your cluster—a necessity for a production-grade, single-node system.
 
 ## 6. Security & Troubleshooting Considerations
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.

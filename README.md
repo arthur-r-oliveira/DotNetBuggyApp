@@ -19,6 +19,13 @@
       - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
       - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+        - [5.3.4.1  Enabling Ephemeral Containers in MicroShift](#5341--enabling-ephemeral-containers-in-microshift)
+          - [Step 1: Access Your MicroShift Node](#step-1-access-your-microshift-node)
+          - [Step 2: Edit the MicroShift Configuration File](#step-2-edit-the-microshift-configuration-file)
+          - [Step 3: Restart the MicroShift Service](#step-3-restart-the-microshift-service)
+        - [5.3.4.2  Example Commands:](#5342--example-commands)
+        - [5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**](#5343--why-kubectl-debug-is-used-instead-of-oc-debug)
+        - [5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison](#5344--kubectl-vs-oc-a-quick-comparison)
     - [5.4. Limits \& LimitaRanges](#54-limits--limitaranges)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security](#61-pod-security)
@@ -369,20 +376,64 @@ oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
-How it works:
-
+**How it works:**
 kubectl debug creates a new, temporary container within an existing pod.
 The --target flag ensures this ephemeral container joins the process namespace of your main application container.
 You specify an image for the ephemeral container that contains the necessary diagnostic tools.
-Pros:
 
-No Permanent Deployment Changes: Ideal for ad-hoc troubleshooting without altering your deployment.yaml.
-On-Demand Resources: The debug container only consumes resources when actively used.
-Cons:
+**Pros:**
+- No Permanent Deployment Changes: Ideal for ad-hoc troubleshooting without altering your deployment.yaml.
+- On-Demand Resources: The debug container only consumes resources when actively used.
 
-Kubernetes Version Dependent: The kubectl debug --target command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates (your current client/cluster might not fully support this).
-Security Policy Challenges: Similar to the sidecar, granting SYS_PTRACE to an ephemeral container will face the same PodSecurity restrictions, potentially requiring privileged SCC access.
-Example Commands:
+**Cons:**
+- Kubernetes Version Dependent: The kubectl debug --target command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates (your current client/cluster might not fully support this).
+- Security Policy Challenges: Similar to the sidecar, granting SYS_PTRACE to an ephemeral container will face the same PodSecurity restrictions, potentially requiring privileged SCC access.
+
+##### 5.3.4.1  Enabling Ephemeral Containers in MicroShift
+
+To enable modern debugging workflows with `kubectl debug`, you must activate the `EphemeralContainers` feature gate in your MicroShift cluster. This is done by modifying MicroShift's central configuration file and restarting the service.
+
+[EphemeralContainers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#uses-for-ephemeral-containers) are useful for interactive troubleshooting when kubectl exec is insufficient because a container has crashed or a container image doesn't include debugging utilities.
+
+In particular, distroless images enable you to deploy minimal container images that reduce attack surface and exposure to bugs and vulnerabilities. Since distroless images do not include a shell or any debugging utilities, it's difficult to troubleshoot distroless images using kubectl exec alone.
+
+When using ephemeral containers, it's helpful to enable process [namespace sharing](https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/) so you can view processes in other containers.
+
+###### Step 1: Access Your MicroShift Node
+
+First, establish a shell session on the system where MicroShift is installed, using an account with `sudo` privileges.
+
+###### Step 2: Edit the MicroShift Configuration File
+
+MicroShift uses a central configuration file located at `/etc/microshift/config.yaml`. If this file doesn't exist, you should create it.
+
+1.  Open the configuration file with a text editor:
+    ```bash
+    sudo vi /etc/microshift/config.yaml
+    ```
+
+2.  Add the `featureGates` section. You need to specify that you want to enable `EphemeralContainers` for both the API server and the kubelet. Add the following content to the file:
+
+    ```yaml
+    apiServer:
+      featureGates:
+      - "EphemeralContainers=true"
+    kubelet:
+      featureGates:
+      - "EphemeralContainers=true"
+    ```
+    **Note:** If the `config.yaml` file already contains other settings, carefully merge these lines, respecting the YAML indentation.
+
+###### Step 3: Restart the MicroShift Service
+
+For the configuration changes to take effect, you must restart the MicroShift service.
+
+```bash
+sudo systemctl restart microshift
+```
+
+
+##### 5.3.4.2  Example Commands:
 
 ~~~
 # 1. Get the pod name
@@ -405,6 +456,44 @@ ps -ef
 # 4. Collect a dump of the main application (replace <PID> with the actual PID)
 dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
 ~~~
+
+##### 5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**
+For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
+
+The key difference between the two commands lies in how they achieve this:
+- `kubectl debug` with the --target flag is specifically designed for this purpose. It works by adding a temporary ephemeral container to the existing, running Pod. This new container joins the Pod's existing namespaces, including the PID namespace, giving it direct access to the application's processes.
+- Currently, `oc debug`, in contrast, creates an entirely new and separate Pod by copying the configuration from the original Deployment or DeploymentConfig. While this new pod has a similar environment (volumes, service account), it has its own isolated PID namespace. As a result, it cannot see or interact with the processes running in the original application pod, making it unsuitable for live dump collection.
+
+Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
+
+##### 5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison
+
+While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
+
+The most important thing to know is that **`oc` is a superset of `kubectl`**. This means that any `kubectl` command you know will also work with `oc`. You can simply replace `kubectl` with `oc` and it will function as expected.
+
+For example:
+* `kubectl get pods` is the same as `oc get pods`.
+* `kubectl apply -f my-app.yaml` is the same as `oc apply -f my-app.yaml`.
+
+However, `oc` includes extra, powerful features designed specifically for OpenShift's developer and enterprise-focused workflows.
+
+Here is a summary of the key differences:
+
+| Feature | `kubectl` (Standard Kubernetes) | `oc` (OpenShift) |
+| :--- | :--- | :--- |
+| **Core Functionality** | Manages standard Kubernetes resources (Pods, Deployments, Services, etc.). | **Includes all `kubectl` functionality** and extends it. |
+| **Focus** | A general-purpose tool for cluster administrators and operators. | Adds many features focused on developer productivity and application lifecycle. |
+| **Authentication** | Relies on a pre-configured `kubeconfig` file for cluster access. | Includes a built-in `oc login` command that integrates with OpenShift's OAuth server for easy authentication. |
+| **Project Management**| Manages `Namespaces`. | Manages `Projects`, which are essentially Namespaces with added user permissions and security policies. Provides easy commands like `oc new-project` and `oc project <name>`. |
+| **Application Deployment** | Deploys applications from YAML manifests (`kubectl apply`). | Adds powerful commands like **`oc new-app`** which can build and deploy an application directly from source code (e.g., from a Git repository) or an existing image. |
+| **Builds & Images** | Does not have built-in concepts for building container images. | Natively understands OpenShift-specific resources like **`BuildConfig`** and **`ImageStream`**. It includes commands like `oc start-build` to trigger image builds from source. |
+| **Networking** | Manages `Ingress` resources for external access, which requires a separate ingress controller. | Natively manages **`Route`** resources, which are a simpler, integrated way to expose services to the outside world, often with automated TLS configuration. |
+
+**Summary: When to Use Which?**
+
+* **Use `kubectl` if:** You are writing scripts that need to be portable across any Kubernetes cluster (not just OpenShift) and you are only interacting with standard Kubernetes resources.
+* **Use `oc` if:** You are working with an OpenShift or MicroShift cluster. It provides a much richer, more integrated experience by giving you access to all the advanced features OpenShift builds on top of Kubernetes. **For daily work on OpenShift, `oc` is always the recommended tool.**
 
 ### 5.4. Limits & LimitaRanges
 

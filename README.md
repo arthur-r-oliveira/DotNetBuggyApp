@@ -15,17 +15,13 @@
     - [5.1. Triggering a Memory Leak](#51-triggering-a-memory-leak)
     - [5.2. Monitoring Application Logs](#52-monitoring-application-logs)
     - [5.3. Collecting Crash Dumps](#53-collecting-crash-dumps)
-      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image)
+      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (SECURE)](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image-secure)
       - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
       - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
-        - [5.3.4.1  Enabling Ephemeral Containers in MicroShift](#5341--enabling-ephemeral-containers-in-microshift)
-          - [Step 1: Access Your MicroShift Node](#step-1-access-your-microshift-node)
-          - [Step 2: Edit the MicroShift Configuration File](#step-2-edit-the-microshift-configuration-file)
-          - [Step 3: Restart the MicroShift Service](#step-3-restart-the-microshift-service)
-        - [5.3.4.2  Example Commands:](#5342--example-commands)
-        - [5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**](#5343--why-kubectl-debug-is-used-instead-of-oc-debug)
-        - [5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison](#5344--kubectl-vs-oc-a-quick-comparison)
+        - [5.3.4.1  Example Commands:](#5341--example-commands)
+        - [5.3.4.2  **Why `kubectl debug` is used instead of `oc debug`**](#5342--why-kubectl-debug-is-used-instead-of-oc-debug)
+        - [5.3.4.3  `kubectl` vs. `oc`: A Quick Comparison](#5343--kubectl-vs-oc-a-quick-comparison)
     - [5.4. Limits \& LimitaRanges](#54-limits--limitaranges)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security](#61-pod-security)
@@ -172,7 +168,7 @@ fail: Program[0]
 ### 5.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image
+#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (SECURE)
 
 This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
 
@@ -229,7 +225,7 @@ exit
 
 
 #### 5.3.2. Option B: Automatic OOM Dumps
-This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The cons with this approach is an increased surface of attack, with the introduction diagnostic tools as mentioned before. 
+This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The **cons** with this approach is an **increased surface of attack**, with the introduction diagnostic tools as mentioned before. 
 
 Configuration:
 
@@ -372,7 +368,7 @@ oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json
 
 #### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
-(**WORKING IN PROGRESS**, _Enabling ephemeral containers in a MicroShift cluster requires modifying its configuration to activate the EphemeralContainers feature gate. This is done by editing MicroShift's central configuration file and then restarting the service._)
+(**WORKING IN PROGRESS**, _Enabling ephemeral containers in a MicroShift cluster main not share the mounted volumes which blocks dotnet-dump to reach data_)
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
@@ -389,51 +385,7 @@ You specify an image for the ephemeral container that contains the necessary dia
 - Kubernetes Version Dependent: The kubectl debug --target command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates (your current client/cluster might not fully support this).
 - Security Policy Challenges: Similar to the sidecar, granting SYS_PTRACE to an ephemeral container will face the same PodSecurity restrictions, potentially requiring privileged SCC access.
 
-##### 5.3.4.1  Enabling Ephemeral Containers in MicroShift
-
-To enable modern debugging workflows with `kubectl debug`, you must activate the `EphemeralContainers` feature gate in your MicroShift cluster. This is done by modifying MicroShift's central configuration file and restarting the service.
-
-[EphemeralContainers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#uses-for-ephemeral-containers) are useful for interactive troubleshooting when kubectl exec is insufficient because a container has crashed or a container image doesn't include debugging utilities.
-
-In particular, distroless images enable you to deploy minimal container images that reduce attack surface and exposure to bugs and vulnerabilities. Since distroless images do not include a shell or any debugging utilities, it's difficult to troubleshoot distroless images using kubectl exec alone.
-
-When using ephemeral containers, it's helpful to enable process [namespace sharing](https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/) so you can view processes in other containers.
-
-###### Step 1: Access Your MicroShift Node
-
-First, establish a shell session on the system where MicroShift is installed, using an account with `sudo` privileges.
-
-###### Step 2: Edit the MicroShift Configuration File
-
-MicroShift uses a central configuration file located at `/etc/microshift/config.yaml`. If this file doesn't exist, you should create it.
-
-1.  Open the configuration file with a text editor:
-    ```bash
-    sudo vi /etc/microshift/config.yaml
-    ```
-
-2.  Add the `featureGates` section. You need to specify that you want to enable `EphemeralContainers` for both the API server and the kubelet. Add the following content to the file:
-
-    ```yaml
-    apiServer:
-      featureGates:
-      - "EphemeralContainers=true"
-    kubelet:
-      featureGates:
-      - "EphemeralContainers=true"
-    ```
-    **Note:** If the `config.yaml` file already contains other settings, carefully merge these lines, respecting the YAML indentation.
-
-###### Step 3: Restart the MicroShift Service
-
-For the configuration changes to take effect, you must restart the MicroShift service.
-
-```bash
-sudo systemctl restart microshift
-```
-
-
-##### 5.3.4.2  Example Commands:
+##### 5.3.4.1  Example Commands:
 
 ~~~
 # 1. Get the pod name
@@ -457,7 +409,16 @@ ps -ef
 dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
 ~~~
 
-##### 5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**
+Sample output
+~~~
+1000140000@dotnet-memory-leak-app-668f6bfd58-l7qk5:/app$ /app/tools/dotnet-dump collect -p 1 -o /tmp/dump_SUCCESS.dmp
+
+Writing full to /tmp/dump_SUCCESS.dmp
+Unable to connect to Process 1. Please verify that /tmp/ is writable by the current user. If the target process has environment variable TMPDIR set, please set TMPDIR to the same directory. Please see https://aka.ms/dotnet-diagnostics-port for more information
+
+~~~
+
+##### 5.3.4.2  **Why `kubectl debug` is used instead of `oc debug`**
 For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
 
 The key difference between the two commands lies in how they achieve this:
@@ -466,7 +427,7 @@ The key difference between the two commands lies in how they achieve this:
 
 Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
 
-##### 5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison
+##### 5.3.4.3  `kubectl` vs. `oc`: A Quick Comparison
 
 While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
 

@@ -368,7 +368,7 @@ oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json
 
 #### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
-(**WORKING IN PROGRESS**, _Enabling ephemeral containers in a MicroShift cluster main not share the mounted volumes which blocks dotnet-dump to reach data_)
+(**WORKING IN PROGRESS**, _kubectl debug with dotdump is not working yet, problably because of https://github.com/dotnet/runtime/issues/111165. Triage is still needed_)
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 

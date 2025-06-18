@@ -15,7 +15,7 @@
     - [5.1. Triggering a Memory Leak](#51-triggering-a-memory-leak)
     - [5.2. Monitoring Application Logs](#52-monitoring-application-logs)
     - [5.3. Collecting Crash Dumps](#53-collecting-crash-dumps)
-      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (SECURE)](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image-secure)
+      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image-unsecure)
       - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
       - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
@@ -168,7 +168,7 @@ fail: Program[0]
 ### 5.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (SECURE)
+#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)
 
 This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
 

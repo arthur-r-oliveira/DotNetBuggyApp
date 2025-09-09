@@ -411,17 +411,34 @@ oc cp "$POD_NAME":/app/dumps/app_collected_dump.dmp ./app_collected_dump.dmp -n 
 
 Sample output
 ~~~
-bash-4.4$ TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect --process-id 1 -o /app/dumps/app_collected_dump.dmp
-
-Writing full to /app/dumps/app_collected_dump.dmp
-Complete
-bash-4.4$ 
 bash-4.4$ ps -ef
 UID         PID   PPID  C STIME TTY          TIME CMD
 1000150+      1      0  0 12:46 ?        00:00:01 dotnet /app/DotNetMemoryLeakApp.dll
 1000150+     90      0  0 14:14 pts/0    00:00:00 /bin/bash
 1000150+    106     90  0 14:20 pts/0    00:00:00 ps -ef
 bash-4.4$ 
+bash-4.4$ TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect --process-id 1 -o /app/dumps/app_collected_dump.dmp
+
+Writing full to /app/dumps/app_collected_dump.dmp
+Complete
+bash-4.4$ 
+bash-4.4$ ls -la /app/dumps/
+ls: cannot access '/app/dumps/': No such file or directory
+bash-4.4$ ls -la /app/      
+total 0
+drwxr-xr-x. 1 default root  19 Aug 22 16:31 .
+dr-xr-xr-x. 1 root    root  28 Sep  9 14:46 ..
+drwxr-xr-x. 3 default root 103 Aug 22 16:31 tools
+bash-4.4$ df 
+Filesystem            1K-blocks     Used Available Use% Mounted on
+overlay                52363264 12386196  39977068  24% /
+tmpfs                     65536        0     65536   0% /dev
+shm                       65536        0     65536   0% /dev/shm
+tmpfs                   1625532    76316   1549216   5% /etc/passwd
+/dev/mapper/rhel-root  52363264 12386196  39977068  24% /etc/hosts
+devtmpfs                   4096        0      4096   0% /proc/keys
+bash-4.4$ exit
+
 [redhat@rhel96-microshift419-vm2 tmp]$ oc cp "$POD_NAME":/app/dumps/app_collected_dump.dmp ./app_collected_dump.dmp -n dotnet-memory-leak-app
 Defaulted container "dotnet-app" out of: dotnet-app, debugger-xxlvc (ephem), debugger-sgcvg (ephem), debugger-xpn9g (ephem)
 tar: Removing leading `/' from member names
@@ -430,6 +447,24 @@ app_collected_dump.dmp: ELF 64-bit LSB core file, x86-64, version 1 (GNU/Linux),
 [redhat@rhel96-microshift419-vm2 tmp]$ du -m app_collected_dump.dmp
 241	app_collected_dump.dmp
 [redhat@rhel96-microshift419-vm2 tmp]$ 
+[redhat@rhel96-microshift419-vm2 tmp]$ oc rsh dotnet-memory-leak-app-56457fbcdc-2rpf9 
+Defaulted container "dotnet-app" out of: dotnet-app, debugger-xxlvc (ephem), debugger-sgcvg (ephem), debugger-xpn9g (ephem), debugger-pvldq (ephem), debugger-shvx2 (ephem)
+sh-4.4$ df
+Filesystem                                        1K-blocks     Used Available Use% Mounted on
+overlay                                            52363264 12386868  39976396  24% /
+tmpfs                                                 65536        0     65536   0% /dev
+shm                                                   65536        0     65536   0% /dev/shm
+tmpfs                                               1625532    76308   1549224   5% /etc/passwd
+/dev/topolvm/7910c082-ecca-40b0-85e7-89a7cdf8728b   5177344   562484   4614860  11% /app/dumps
+/dev/mapper/rhel-root                              52363264 12386868  39976396  24% /etc/hosts
+tmpfs                                               2097152       16   2097136   1% /run/secrets/kubernetes.io/serviceaccount
+devtmpfs                                               4096        0      4096   0% /proc/keys
+sh-4.4$ ls -l /app/dumps/
+total 493328
+-rw-------. 1 1000150000 1000150000 252518400 Sep  9 14:16 app_collected_dump.dmp
+-rw-------. 1 1000150000 1000150000 252649472 Sep  9 14:25 app_collected_dump2.dmp
+sh-4.4$ 
+
 ~~~
 
 

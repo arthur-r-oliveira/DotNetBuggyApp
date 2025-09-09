@@ -432,7 +432,35 @@ app_collected_dump.dmp: ELF 64-bit LSB core file, x86-64, version 1 (GNU/Linux),
 [redhat@rhel96-microshift419-vm2 tmp]$ 
 ~~~
 
-##### 5.3.4.2  **Why `kubectl debug` is used instead of `oc debug`**
+
+##### 5.3.4.2 The Mystery of the Missing /app/dumps Directory
+
+If you were sharing processes, why did this command fail inside your debug container?
+
+~~~
+bash-4.4$ ls -l /app/dumps
+ls: cannot access '/app/dumps': No such file or directory
+~~~
+
+This reveals another critical concept: sharing the process namespace is not the same as sharing the mount namespace (the filesystem).
+
+Ephemeral containers injected with `--target` get their own separate set of volumeMounts. They do not inherit the mounts from the target container. That's why your debug container had no knowledge of the `/app/dumps` directory, which is a PVC mount in your original dotnet-app container.
+
+**So How Did the File Get Written?**
+If the debug container couldn't see /app/dumps, how did this command succeed?
+
+~~~
+TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect ... -o /app/dumps/app_collected_dump2.dmp
+~~~
+
+Because dotnet-dump is just a control tool. It attaches to the target process (PID 1) and tells it what to do. The actual work of writing the memory dump to the file is performed by the target dotnet process itself.
+
+Since the dotnet process (PID 1) is running in the original container, it has full access to its own filesystem, including the mounted PVC at `/app/dumps`.
+
+Think of it like this: You used a remote control (dotnet-dump) from your room to tell a robot (dotnet process) in the next room to write a file on a table (/app/dumps) that only exists in its room. 🤖
+
+##### 5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**
+
 For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
 
 The key difference between the two commands lies in how they achieve this:

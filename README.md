@@ -406,7 +406,7 @@ ps -ef
 TMPDIR=/proc/<PID>/root/tmp /app/tools/ dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
 
 # 5. Exit the debug container and copy the dump file
-
+oc cp "$POD_NAME":/app/dumps/app_collected_dump.dmp ./app_collected_dump.dmp -n dotnet-memory-leak-app
 ~~~
 
 Sample output

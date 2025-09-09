@@ -20,8 +20,9 @@
       - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
       - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
         - [5.3.4.1  Example Commands:](#5341--example-commands)
-        - [5.3.4.2  **Why `kubectl debug` is used instead of `oc debug`**](#5342--why-kubectl-debug-is-used-instead-of-oc-debug)
-        - [5.3.4.3  `kubectl` vs. `oc`: A Quick Comparison](#5343--kubectl-vs-oc-a-quick-comparison)
+        - [5.3.4.2  The Mystery of the Missing /app/dumps Directory](#5342--the-mystery-of-the-missing-appdumps-directory)
+        - [5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**](#5342--why-kubectl-debug-is-used-instead-of-oc-debug)
+        - [5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison](#5343--kubectl-vs-oc-a-quick-comparison)
     - [5.4. Limits \& LimitaRanges](#54-limits--limitaranges)
   - [6. Security \& Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security](#61-pod-security)
@@ -504,7 +505,7 @@ The key difference between the two commands lies in how they achieve this:
 
 Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
 
-##### 5.3.4.3  `kubectl` vs. `oc`: A Quick Comparison
+##### 5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison
 
 While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
 

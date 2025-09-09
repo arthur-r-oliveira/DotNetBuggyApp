@@ -27,7 +27,7 @@ COPY *.csproj ./
 RUN dotnet restore
 
 COPY . .
-RUN dotnet publish -c Release -o /app/out --no-restore
+RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o /app/out --no-restore
 
 # Stage 2: Create the final runtime image
 FROM registry.redhat.io/rhel8/dotnet-80:8.0 AS final

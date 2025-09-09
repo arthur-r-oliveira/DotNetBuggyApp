@@ -368,13 +368,11 @@ oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json
 
 #### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
-(**WORKING IN PROGRESS**, _kubectl debug with dotdump is not working yet, problably because of https://github.com/dotnet/runtime/issues/111165. Triage is still needed_)
-
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
 **How it works:**
 kubectl debug creates a new, temporary container within an existing pod.
-The --target flag ensures this ephemeral container joins the process namespace of your main application container.
+The `--target` flag ensures this ephemeral container joins the process namespace of your main application container.
 You specify an image for the ephemeral container that contains the necessary diagnostic tools.
 
 **Pros:**
@@ -382,8 +380,7 @@ You specify an image for the ephemeral container that contains the necessary dia
 - On-Demand Resources: The debug container only consumes resources when actively used.
 
 **Cons:**
-- Kubernetes Version Dependent: The kubectl debug --target command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates (your current client/cluster might not fully support this).
-- Security Policy Challenges: Similar to the sidecar, granting SYS_PTRACE to an ephemeral container will face the same PodSecurity restrictions, potentially requiring privileged SCC access.
+- Kubernetes Version Dependent: The kubectl debug `--target` command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates.
 
 ##### 5.3.4.1  Example Commands:
 
@@ -406,16 +403,33 @@ ps -ef
 # Look for 'dotnet /app/DotNetMemoryLeakApp.dll'. Note its PID.
 
 # 4. Collect a dump of the main application (replace <PID> with the actual PID)
-dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
+TMPDIR=/proc/<PID>/root/tmp /app/tools/ dotnet-dump collect --process-id <PID> -o /app/dumps/ephemeral_collected_dump.dmp
+
+# 5. Exit the debug container and copy the dump file
+
 ~~~
 
 Sample output
 ~~~
-1000140000@dotnet-memory-leak-app-668f6bfd58-l7qk5:/app$ /app/tools/dotnet-dump collect -p 1 -o /tmp/dump_SUCCESS.dmp
+bash-4.4$ TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect --process-id 1 -o /app/dumps/app_collected_dump.dmp
 
-Writing full to /tmp/dump_SUCCESS.dmp
-Unable to connect to Process 1. Please verify that /tmp/ is writable by the current user. If the target process has environment variable TMPDIR set, please set TMPDIR to the same directory. Please see https://aka.ms/dotnet-diagnostics-port for more information
-
+Writing full to /app/dumps/app_collected_dump.dmp
+Complete
+bash-4.4$ 
+bash-4.4$ ps -ef
+UID         PID   PPID  C STIME TTY          TIME CMD
+1000150+      1      0  0 12:46 ?        00:00:01 dotnet /app/DotNetMemoryLeakApp.dll
+1000150+     90      0  0 14:14 pts/0    00:00:00 /bin/bash
+1000150+    106     90  0 14:20 pts/0    00:00:00 ps -ef
+bash-4.4$ 
+[redhat@rhel96-microshift419-vm2 tmp]$ oc cp "$POD_NAME":/app/dumps/app_collected_dump.dmp ./app_collected_dump.dmp -n dotnet-memory-leak-app
+Defaulted container "dotnet-app" out of: dotnet-app, debugger-xxlvc (ephem), debugger-sgcvg (ephem), debugger-xpn9g (ephem)
+tar: Removing leading `/' from member names
+[redhat@rhel96-microshift419-vm2 tmp]$ file app_collected_dump.dmp
+app_collected_dump.dmp: ELF 64-bit LSB core file, x86-64, version 1 (GNU/Linux), SVR4-style, from 'dotnet', real uid: 1000150000, effective uid: 1000150000, real gid: 0, effective gid: 0, execfn: '/usr/bin/dotnet', platform: 'x86_64'
+[redhat@rhel96-microshift419-vm2 tmp]$ du -m app_collected_dump.dmp
+241	app_collected_dump.dmp
+[redhat@rhel96-microshift419-vm2 tmp]$ 
 ~~~
 
 ##### 5.3.4.2  **Why `kubectl debug` is used instead of `oc debug`**

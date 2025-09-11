@@ -11,3 +11,5 @@ resources:
   - svc.yaml
   - route.yaml
   - deployment.yaml
+  - deployment-secure.yaml
+  - scc-and-rbac-secure.yaml

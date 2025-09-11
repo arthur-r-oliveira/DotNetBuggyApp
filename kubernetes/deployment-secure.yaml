@@ -1,41 +1,42 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dotnet-memory-leak-app
+  name: dotnet-memory-leak-app-secure
   namespace: dotnet-memory-leak-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dotnet-memory-leak-app
+      app: dotnet-memory-leak-app-secure
   template:
     metadata:
       labels:
-        app: dotnet-memory-leak-app
+        app: dotnet-memory-leak-app-secure
     spec:
       shareProcessNamespace: true
-      serviceAccountName: dotnet-app-sa
-      # Removed top-level securityContext here as it might conflict with SCCs for runAsUser/NonRoot
-      # Pod-level security context removed to comply with OpenShift SCCs.
-      # Container-level context will be used instead.
+      serviceAccountName: secure-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
             claimName: dotnet-memory-leak-dumps
-        - name: diag-socket # Define the shared volume
+        - name: diag-socket
           emptyDir: {}
       containers:
-        - name: dotnet-app
+        - name: dotnet-app-secure
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
-            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
-            seccompProfile:
-              type: RuntimeDefault
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
           command: ["/bin/sh", "-c"]
           args:
@@ -56,7 +57,7 @@ spec:
           volumeMounts:
             - mountPath: /app/dumps
               name: dump-storage
-            - name: diag-socket # Mount the shared volume
+            - name: diag-socket
               mountPath: /tmp
           resources:
             requests:

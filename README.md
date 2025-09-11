@@ -22,6 +22,7 @@
         - [5.3.4.2  The Mystery of the Missing /app/dumps Directory](#5342-the-mystery-of-the-missing-appdumps-directory)
         - [5.3.4.3  Why `kubectl debug` is used instead of `oc debug`](#5343--why-kubectl-debug-is-used-instead-of-oc-debug)
         - [5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison](#5344--kubectl-vs-oc-a-quick-comparison)
+      - [5.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container](#535-option-e-secure-on-demand-dumps-via-shell-less-ephemeral-container)
     - [5.4. Limits & LimitaRanges](#54-limits--limitaranges)
   - [6. Security & Troubleshooting Considerations](#6-security--troubleshooting-considerations)
     - [6.1. Pod Security](#61-pod-security)
@@ -533,7 +534,235 @@ Here is a summary of the key differences:
 * **Use `kubectl` if:** You are writing scripts that need to be portable across any Kubernetes cluster (not just OpenShift) and you are only interacting with standard Kubernetes resources.
 * **Use `oc` if:** You are working with an OpenShift or MicroShift cluster. It provides a much richer, more integrated experience by giving you access to all the advanced features OpenShift builds on top of Kubernetes. **For daily work on OpenShift, `oc` is always the recommended tool.**
 
+#### 5.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container
+This method enhances Option D by adhering to strict security policies that forbid shells even in debug images. It uses a purpose-built, shell-less debug container with a compiled utility that automates the dump collection process.
+
+**How it works:**
+1.  A Go utility (`tools/pid-finder`) is compiled into a static binary.
+2.  A multi-stage `Containerfile-debug` builds a debug image that contains the `.NET` diagnostic tools and this Go utility as its `ENTRYPOINT`.
+3.  When this debug container is launched, the Go utility executes automatically. It finds the target `.NET` process, collects a full core dump, and then sleeps indefinitely.
+4.  This approach is fully automated, requires no interactive shell, and minimizes the attack surface of the debug image.
+
+**Workflow:**
+
+**Step 1: Build the Secure Debug Image**
+Use the modified `Containerfile-debug` to build the image. This must be done from the root of the repository.
+
+~~~ 
+# Build the secure debug image
+podman build -t quay.io/your-namespace/dotnet-secure-debug:v1 -f Containerfile-debug .
+
+# Push the image to your container registry
+podman push quay.io/your-namespace/dotnet-secure-debug:v1
+~~~
+
+**Step 2: Launch the Ephemeral Debug Container**
+Use `kubectl debug` to attach the ephemeral container to your running application pod. The command is simpler because the container's entrypoint does all the work.
+
+~~~ 
+# Get the pod name
+export POD_NAME=$(kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+
+# Launch the secure ephemeral debug container
+# The --image should point to the one you just built.
+kubectl debug -it "$POD_NAME" \
+  --image=quay.io/your-namespace/dotnet-secure-debug:v1 \
+  --share-processes \
+  --target=dotnet-app
+~~~
+
+You will see the output from the Go utility as it finds the process and collects the dump.
+
+**Step 3: Copy the Dump File**
+The dump is saved to `/app/dumps/coredump.dmp` inside the target container's filesystem (since the `dotnet-dump` command is executed by the target process). You can copy it out using `kubectl cp`.
+
+~~~ 
+# Copy the dump file from the application pod to your local machine
+kubectl cp "$POD_NAME":/app/dumps/coredump.dmp ./coredump.dmp -n dotnet-memory-leak-app -c dotnet-app
+~~~
+
+This method provides a secure and non-interactive way to obtain diagnostics, making it ideal for production environments with strict security postures.
+
+
+Sample output: 
+
+~~~
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ sudo podman load -i dotnet-secure-debug-v1.tar 
+[sudo] password for redhat: 
+Getting image source signatures
+Copying blob bfaed8e0c4d1 done   | 
+Copying blob 28de103bd9c3 skipped: already exists  
+Copying blob 85bbf55a0c9b skipped: already exists  
+Copying blob 37aef32bd2f2 skipped: already exists  
+Copying blob ec17d09b16f1 done   | 
+Copying config c57643bf44 done   | 
+Writing manifest to image destination
+Loaded image: quay.io/rhn_support_arolivei/dotnet-secure-debug:v1
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ oc get pods
+NAME                                      READY   STATUS    RESTARTS   AGE
+dotnet-memory-leak-app-77b88ddf46-j4dn5   1/1     Running   0          6s
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ oc rsh dotnet-memory-leak-app-77b88ddf46-j4dn5 
+sh-4.4$ ps -ef
+UID         PID   PPID  C STIME TTY          TIME CMD
+root          1      0  0 16:09 ?        00:00:00 /usr/bin/pod
+1000170+      2      0  1 16:09 ?        00:00:00 dotnet /app/DotNetMemoryLeakApp.dll
+1000170+     22      0  0 16:09 pts/0    00:00:00 /bin/sh
+1000170+     24     22  0 16:09 pts/0    00:00:00 ps -ef
+sh-4.4$ ls -l /proc/2/root/tmp
+total 0
+prwx------. 1 1000170000 1000170000 0 Sep 11 16:09 clr-debug-pipe-2-27034808-in
+prwx------. 1 1000170000 1000170000 0 Sep 11 16:09 clr-debug-pipe-2-27034808-out
+srw-------. 1 1000170000 1000170000 0 Sep 11 16:09 dotnet-diagnostic-2-27034808-socket
+sh-4.4$ df
+Filesystem                                        1K-blocks     Used Available Use% Mounted on
+overlay                                            52363264 15721224  36642040  31% /
+tmpfs                                                 65536        0     65536   0% /dev
+shm                                                   65536        0     65536   0% /dev/shm
+tmpfs                                               1625532    76020   1549512   5% /etc/passwd
+/dev/mapper/rhel-root                              52363264 15721224  36642040  31% /tmp
+/dev/topolvm/01b27068-1c48-46ea-92c6-49ba0ad97c40   5177344   314060   4863284   7% /app/dumps
+tmpfs                                               2097152       16   2097136   1% /run/secrets/kubernetes.io/serviceaccount
+devtmpfs                                               4096        0      4096   0% /proc/keys
+sh-4.4$ ls -l /app/dumps/
+total 0
+sh-4.4$ 
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ export POD_NAME=$(kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ kubectl debug -it "$POD_NAME" --image=quay.io/rhn_support_arolivei/dotnet-secure-debug:v1 --target=dotnet-app
+Targeting container "dotnet-app". If you don't see processes from this container it may be because the container runtime doesn't support this feature.
+--profile=legacy is deprecated and will be removed in the future. It is recommended to explicitly specify a profile, for example "--profile=general".
+Defaulting debug container name to debugger-rlb4q.
+If you don't see a command prompt, try pressing enter.
+
+------------------------------------------------------------------------
+Successfully triggered core dump generation in the application container.
+The dump file is being written to '/app/dumps/coredump.dmp' inside the 'dotnet-app' container.
+You can now copy the file from the application container.
+Example: kubectl cp <pod-name>:/app/dumps/coredump.dmp ./coredump.dmp -c dotnet-app
+This debug container will automatically exit in 10 seconds.
+------------------------------------------------------------------------
+Exiting debug container.
+Session ended, the ephemeral container will not be restarted but may be reattached using 'kubectl attach dotnet-memory-leak-app-77b88ddf46-j4dn5 -c debugger-rlb4q -i -t' if it is still running
+[redhat@rhel96-microshift419-vm2 DotNetBuggyApp]$ oc rsh dotnet-memory-leak-app-77b88ddf46-j4dn5 
+Defaulted container "dotnet-app" out of: dotnet-app, debugger-rlb4q (ephem)
+sh-4.4$ ls -la /app/dumps/
+total 236132
+drwxrwsrwx. 2 root       1000170000        26 Sep 11 16:10 .
+drwxr-xr-x. 1 root       root              19 Sep 11 16:09 ..
+-rw-------. 1 1000170000 1000170000 241799168 Sep 11 16:10 coredump.dmp
+sh-4.4$
+~~~
+
+#### 5.3.6. Option F: Deploying with a Hardened Security Context
+
+This method demonstrates how to run the application under a highly restrictive, non-root security context. It serves as a best-practice example for production environments where security is paramount. This approach uses a dedicated service account and a custom Security Context Constraint (SCC) to enforce strict security rules from the start.
+
+**Configuration:**
+
+This approach is defined in two files:
+
+1.  `deployment-secure.yaml`: A new deployment manifest that runs the pod with a locked-down security context.
+2.  `scc-and-rbac-secure.yaml`: Contains the necessary `ServiceAccount` and a custom `SecurityContextConstraints` (SCC) named `restricted-v2`.
+
+Key security settings enforced by this configuration include:
+- `runAsNonRoot: true`: Ensures the container does not run as root.
+- `runAsUser: 1000` / `runAsGroup: 1000`: Forces the container to run with a specific, non-privileged user and group ID.
+- `readOnlyRootFilesystem: true`: Prevents any part of the container's root filesystem from being written to. Writable paths for dumps (`/app/dumps`) and temporary files (`/tmp`) are provided by volume mounts.
+- `capabilities: { drop: ["ALL"] }`: Drops all Linux capabilities, reducing the process's potential privileges to the absolute minimum.
+- `seccompProfile: { type: RuntimeDefault }`: Applies the default seccomp profile of the container runtime, blocking a wide range of potentially dangerous syscalls.
+
+**Workflow:**
+
+The new resources are included in the `kustomization.yaml` file. To deploy this hardened application alongside the default one, simply apply the kustomization.
+
+**Example Command:**
+
+~~~
+# Apply all configurations, including the secure deployment
+oc apply -k .
+~~~
+
+After the command succeeds, you will have two deployments running: the original `dotnet-memory-leak-app` and the new, hardened `dotnet-memory-leak-app-secure`. This allows you to compare their behavior and verify that the application still functions correctly under much stricter security constraints.
+
+Sample output:
+
+~~~
+[redhat@rhel96-microshift419-vm2 kubernetes]$ kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app-secure
+NAME                                             READY   STATUS    RESTARTS   AGE
+dotnet-memory-leak-app-secure-86c78f8bf4-gmlls   1/1     Running   0          25s
+[redhat@rhel96-microshift419-vm2 kubernetes]$ export POD_NAME=$(kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app-secure -o jsonpath='{.items[0].metadata.name}')
+[redhat@rhel96-microshift419-vm2 kubernetes]$ kubectl debug -it "$POD_NAME" --image=quay.io/rhn_support_arolivei/dotnet-secure-debug:v1 --target=dotnet-app-secure
+Targeting container "dotnet-app-secure". If you don't see processes from this container it may be because the container runtime doesn't support this feature.
+--profile=legacy is deprecated and will be removed in the future. It is recommended to explicitly specify a profile, for example "--profile=general".
+Defaulting debug container name to debugger-5klct.
+If you don't see a command prompt, try pressing enter.
+Exiting debug container.
+Session ended, the ephemeral container will not be restarted but may be reattached using 'kubectl attach dotnet-memory-leak-app-secure-86c78f8bf4-gmlls -c debugger-5klct -i -t' if it is still running
+[redhat@rhel96-microshift419-vm2 kubernetes]$ oc get pvc
+NAME                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS          VOLUMEATTRIBUTESCLASS   AGE
+dotnet-memory-leak-dumps   Bound    pvc-89927e32-e3fe-4f26-8d61-e974e2d628d3   5Gi        RWO            topolvm-provisioner   <unset>                 91s
+[redhat@rhel96-microshift419-vm2 kubernetes]$ oc rsh dotnet-memory-leak-app-secure-86c78f8bf4-gmlls 
+Defaulted container "dotnet-app-secure" out of: dotnet-app-secure, debugger-5klct (ephem)
+sh-4.4$ ls -la /app/dumps/
+total 235740
+drwxrwsrwx. 3 root 1000        37 Sep 11 16:40 .
+drwxr-xr-x. 1 root root        19 Sep 11 16:39 ..
+-rw-------. 1 1000 1000 241397760 Sep 11 16:40 coredump.dmp
+drwxrwsrwx. 2 1000 1000         6 Sep 11 16:39 tmp
+sh-4.4$ date
+Thu Sep 11 16:41:03 UTC 2025
+sh-4.4$ 
+[redhat@rhel96-microshift419-vm2 kubernetes]$ oc get pods dotnet-memory-leak-app-secure-6f7f4c4f49-thxdc -o yaml|egrep -A 10 "securityContext|share"
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /app/dumps
+--
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+    stdin: true
+    targetContainerName: dotnet-app-secure
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    tty: true
+--
+  securityContext:
+    fsGroup: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+    seLinuxOptions:
+      level: s0:c13,c12
+    seccompProfile:
+      type: RuntimeDefault
+  serviceAccount: secure-app-sa
+  serviceAccountName: secure-app-sa
+  shareProcessNamespace: false
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+
+~~~
+
 ### 5.4. Limits & LimitaRanges
+
 
 In a Kubernetes environment, managing compute resources like CPU and Memory is not just a best practice; it is critical for ensuring application performance and cluster stability. This is especially true for single-node deployments like MicroShift and self-contained air-gapped systems.
 

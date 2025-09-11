@@ -519,19 +519,19 @@
     ]
   },
   "packageFolders": {
-    "/root/.nuget/packages/": {}
+    "/home/arolivei/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/root/DotNetMemoryLeakApp/DotNetMemoryLeakApp.csproj",
+      "projectUniqueName": "/home/arolivei/utils/code/DotNetBuggyApp/DotNetMemoryLeakApp.csproj",
       "projectName": "DotNetMemoryLeakApp",
-      "projectPath": "/root/DotNetMemoryLeakApp/DotNetMemoryLeakApp.csproj",
-      "packagesPath": "/root/.nuget/packages/",
-      "outputPath": "/root/DotNetMemoryLeakApp/obj/",
+      "projectPath": "/home/arolivei/utils/code/DotNetBuggyApp/DotNetMemoryLeakApp.csproj",
+      "packagesPath": "/home/arolivei/.nuget/packages/",
+      "outputPath": "/home/arolivei/utils/code/DotNetBuggyApp/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "/root/.nuget/NuGet/NuGet.Config"
+        "/home/arolivei/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
@@ -587,7 +587,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "/usr/lib64/dotnet/sdk/8.0.116/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/lib64/dotnet/sdk/8.0.117/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

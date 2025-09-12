@@ -759,7 +759,23 @@ sh-4.4$
     key: node.kubernetes.io/unreachable
     operator: Exists
     tolerationSeconds: 300
+[redhat@rhel96-microshift419-vm2 kubernetes]$ export POD_NAME=$(kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app-secure -o jsonpath='{.items[0].metadata.name}')
+[redhat@rhel96-microshift419-vm2 kubernetes]$ kubectl debug -it "$POD_NAME" --image=quay.io/rhn_support_arolivei/dotnet-secure-debug:v1 --target=dotnet-app-secure
+Targeting container "dotnet-app-secure". If you don't see processes from this container it may be because the container runtime doesn't support this feature.
+--profile=legacy is deprecated and will be removed in the future. It is recommended to explicitly specify a profile, for example "--profile=general".
+Defaulting debug container name to debugger-pkjlt.
+If you don't see a command prompt, try pressing enter.
 
+------------------------------------------------------------------------
+Successfully triggered core dump generation in the application container.
+The dump file is being written to '/app/dumps/coredump.dmp' inside the 'dotnet-app' container.
+You can now copy the file from the application container.
+Example: kubectl cp <pod-name>:/app/dumps/coredump.dmp ./coredump.dmp -c dotnet-app
+This debug container will automatically exit in 10 seconds.
+------------------------------------------------------------------------
+Exiting debug container.
+Session ended, the ephemeral container will not be restarted but may be reattached using 'kubectl attach dotnet-memory-leak-app-secure-6f7f4c4f49-7d55w -c debugger-pkjlt -i -t' if it is still running
+[redhat@rhel96-microshift419-vm2 kubernetes]$ 
 ~~~
 
 ### 5.4. Limits & LimitaRanges

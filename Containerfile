@@ -38,6 +38,11 @@ COPY --from=build /app/out .
 COPY --from=build /app/README.md .
 COPY --from=build /app/tools /app/tools
 
+USER root
+RUN mkdir -p /app/dumps && \
+    chown -R 1001:0 /app/dumps && \
+    chmod -R 750 /app/dumps
+
 USER 1001
 
 # Add the directory containing the tool executables to the PATH

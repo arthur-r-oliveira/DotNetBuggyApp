@@ -6,34 +6,37 @@
   - [1. Repository Overview](#1-repository-overview)
   - [2. Key Features](#2-key-features)
   - [3. Motivation](#3-motivation)
-  - [4. Deployment Guide (OpenShift / MicroShift)](#4-deployment-guide-openshift--microshift)
-    - [4.1. Prerequisites](#41-prerequisites)
-    - [4.2. Building & Pushing the Container Image](#42-building--pushing-the-container-image)
-    - [4.3. Deployment to OpenShift / MicroShift](#43-deployment-to-openshift--microshift)
-  - [5. Usage & Diagnostic Workflow](#5-usage--diagnostic-workflow)
-    - [5.1. Triggering a Memory Leak](#51-triggering-a-memory-leak)
-    - [5.2. Monitoring Application Logs](#52-monitoring-application-logs)
-    - [5.3. Collecting Crash Dumps](#53-collecting-crash-dumps)
-      - [5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)](#531-option-a-on-demand-dumps-via-tools-embedded-in-application-image-unsecure)
-      - [5.3.2. Option B: Automatic OOM Dumps](#532-option-b-automatic-oom-dumps)
-      - [5.3.3. Option C: On-Demand Sidecar via Deployment Patching](#533-option-c-on-demand-sidecar-via-deployment-patching)
-      - [5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#534-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
-        - [5.3.4.1  Example Commands:](#5341--example-commands)
-        - [5.3.4.2  The Mystery of the Missing /app/dumps Directory](#5342--the-mystery-of-the-missing-appdumps-directory)
-        - [5.3.4.3  Why `kubectl debug` is used instead of `oc debug`](#5343--why-kubectl-debug-is-used-instead-of-oc-debug)
-        - [5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison](#5344--kubectl-vs-oc-a-quick-comparison)
-      - [5.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container](#535-option-e-secure-on-demand-dumps-via-shell-less-ephemeral-container)
-      - [5.3.6. Option F: Deploying with a Hardened Security Context](#536-option-f-deploying-with-a-hardened-security-context)
-    - [5.4. Limits & LimitaRanges](#54-limits--limitaranges)
-  - [6. Security & Troubleshooting Considerations](#6-security--troubleshooting-considerations)
-    - [6.1. Pod Security](#61-pod-security)
-    - [6.2. SYS_PTRACE Capability](#62-sys_ptrace-capability)
-    - [6.3. seccompProfile](#63-seccompprofile)
-    - [6.4. TMPDIR and IPC Issues](#64-tmpdir-and-ipc-issues)
-    - [6.5. Resource Limits and OOM Killer Race Conditions](#65-resource-limits-and-oom-killer-race-conditions)
-  - [7. External References & Further Reading](#7-external-references--further-reading)
-  - [8. Contributing](#8-contributing)
-  - [9. License](#9-license)
+  - [4. Project Structure](#4-project-structure)
+  - [5. Deployment Guide (OpenShift / MicroShift)](#5-deployment-guide-openshift--microshift)
+    - [5.1. Prerequisites](#51-prerequisites)
+    - [5.2. Building & Pushing the Container Image](#52-building--pushing-the-container-image)
+    - [5.3. Deployment to OpenShift / MicroShift](#53-deployment-to-openshift--microshift)
+  - [6. Usage & Diagnostic Workflow](#6-usage--diagnostic-workflow)
+    - [6.1. Triggering a Memory Leak](#61-triggering-a-memory-leak)
+    - [6.2. Monitoring Application Logs](#62-monitoring-application-logs)
+    - [6.3. Collecting Crash Dumps](#63-collecting-crash-dumps)
+      - [6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)](#631-option-a-on-demand-dumps-via-tools-embedded-in-application-image-unsecure)
+      - [6.3.2. Option B: Automatic OOM Dumps](#632-option-b-automatic-oom-dumps)
+      - [6.3.3. Option C: On-Demand Sidecar via Deployment Patching](#633-option-c-on-demand-sidecar-via-deployment-patching)
+      - [6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#634-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+        - [6.3.4.1. Example Commands](#6341-example-commands)
+        - [6.3.4.2. The Mystery of the Missing /app/dumps Directory](#6342-the-mystery-of-the-missing-appdumps-directory)
+        - [6.3.4.3. Why `kubectl debug` is used instead of `oc debug`](#6343-why-kubectl-debug-is-used-instead-of-oc-debug)
+        - [6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison](#6344-kubectl-vs-oc-a-quick-comparison)
+      - [6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container](#635-option-e-secure-on-demand-dumps-via-shell-less-ephemeral-container)
+      - [6.3.6. Option F: Deploying with a Hardened Security Context](#636-option-f-deploying-with-a-hardened-security-context)
+      - [6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#637-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
+      - [6.3.8. baseOS access through nsenter](#638-baseos-access-through-nsenter)
+    - [6.4. Limits & LimitaRanges](#64-limits--limitaranges)
+  - [7. Security & Troubleshooting Considerations](#7-security--troubleshooting-considerations)
+    - [7.1. Pod Security](#71-pod-security)
+    - [7.2. SYS_PTRACE Capability](#72-sys_ptrace-capability)
+    - [7.3. seccompProfile](#73-seccompprofile)
+    - [7.4. TMPDIR and IPC Issues](#74-tmpdir-and-ipc-issues)
+    - [7.5. Resource Limits and OOM Killer Race Conditions](#75-resource-limits-and-oom-killer-race-conditions)
+  - [8. External References & Further Reading](#8-external-references--further-reading)
+  - [9. Contributing](#9-contributing)
+  - [10. License](#10-license)
 ---
 
 ## 1. Repository Overview
@@ -57,11 +60,49 @@ Effective memory management is paramount for application stability and performan
 * **Showcase robust deployment strategies** for `.NET` applications on OpenShift/MicroShift, emphasizing security and operational best practices.
 * **Facilitate debugging in restricted environments**, including air-gapped scenarios, by demonstrating image loading and offline tooling.
 
-## 4. Deployment Guide (OpenShift / MicroShift)
+## 4. Project Structure
+
+This repository contains a comprehensive `.NET` memory leak simulation and diagnostic toolkit with the following key components:
+
+### Core Application Files
+- **`Program.cs`**: Main application entry point with ASP.NET Core web API endpoints
+  - `/triggerMemoryLeak`: Endpoint to initiate controlled memory allocation
+  - `/readme`: Endpoint to render this README as a web page
+- **`MemoryLeakManager.cs`**: Static class managing memory allocation and tracking
+- **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
+
+### Container Configuration
+- **`Containerfile`**: Multi-stage container build with embedded .NET diagnostic tools
+- **`Containerfile-debug`**: Specialized debug container for secure dump collection
+- **`configure_core_dump.sh`**: Shell script for core dump configuration
+
+### Kubernetes Deployment Manifests (`kubernetes/` directory)
+- **`deployment.yaml`**: Standard deployment configuration
+- **`deployment-secure.yaml`**: Hardened security deployment variant
+- **`kustomization.yaml`**: Kustomize configuration for resource management
+- **`ns.yaml`**: Namespace definition
+- **`serviceaccount.yaml`**: Service account configuration
+- **`rbac.yaml`**: Role-based access control definitions
+- **`scc-and-rbac-secure.yaml`**: Security context constraints for hardened deployment
+- **`svc.yaml`**: Service definition
+- **`route.yaml`**: OpenShift route configuration
+- **`pvc.yaml`**: Persistent volume claim for dump storage
+- **`limitrange.yaml`**: Resource limits and constraints
+- **`patch/`**: JSON patch files for dynamic sidecar injection
+
+### Diagnostic Tools
+- **`tools/pid-finder/main.go`**: Go utility for automated process discovery and dump collection
+- **`DotNetMemoryLeakApp.http`**: HTTP request examples for testing endpoints
+
+### Configuration Files
+- **`appsettings.json`** / **`appsettings.Development.json`**: Application configuration
+- **`Properties/launchSettings.json`**: Development launch settings
+
+## 5. Deployment Guide (OpenShift / MicroShift)
 
 This guide walks you through deploying the `DotNet Memory Leak App` to an OpenShift or MicroShift cluster.
 
-### 4.1. Prerequisites
+### 5.1. Prerequisites
 
 Before proceeding, ensure you have:
 
@@ -70,7 +111,7 @@ Before proceeding, ensure you have:
 * A container registry (e.g., Quay.io, or local Podman storage) available for pushing images.
 * **Cluster Administrator Privileges (Potentially Required)**: Depending on your cluster's security policies, you might need administrator assistance to modify Pod Security Enforcement levels or bind your ServiceAccount to a more permissive `SecurityContextConstraints` (SCC) like `privileged`, especially if you intend to use interactive debugging tools.
 
-### 4.2. Building & Pushing the Container Image
+### 5.2. Building & Pushing the Container Image
 
 In an **internet-connected environment**, build and push the container image to your chosen registry:
 
@@ -93,7 +134,7 @@ podman save -o dotnet-memory-leak-app.tar quay.io/your-namespace/dotnet-memory-l
 Transfer dotnet-memory-leak-app.tar to your air-gapped environment's worker nodes.
 ~~~
 
-### 4.3. Deployment to OpenShift / MicroShift
+### 5.3. Deployment to OpenShift / MicroShift
 Navigate to the kubernetes directory within your project:
 
 ~~~
@@ -132,10 +173,10 @@ route.route.openshift.io/dotnet-memory-leak-route created
 securitycontextconstraints.security.openshift.io/dotnet-scc created
 ~~~
 
-## 5. Usage & Diagnostic Workflow
+## 6. Usage & Diagnostic Workflow
 This section outlines how to use the application and leverage its diagnostic capabilities.
 
-### 5.1. Triggering a Memory Leak
+### 6.1. Triggering a Memory Leak
 To initiate the memory leak, access the /triggerMemoryLeak endpoint of your deployed application via its OpenShift Route.
 
 ~~~
@@ -148,7 +189,7 @@ curl http://$ROUTE_HOST/triggerMemoryLeak
 
 The application will begin allocating memory in 1MB chunks, logging its progress.
 
-### 5.2. Monitoring Application Logs
+### 6.2. Monitoring Application Logs
 As the memory leak progresses, you can observe the application's logs, which will show memory allocation updates and eventually OutOfMemoryException messages.
 
 ~~~
@@ -167,10 +208,10 @@ fail: Program[0]
          at Program.<>c.<<<Main>$>b__0_0>d.MoveNext() in /app/Program.cs:line 37
 ~~~
 
-### 5.3. Collecting Crash Dumps
+### 6.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 5.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)
+#### 6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)
 
 This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
 
@@ -226,7 +267,7 @@ exit
 - **Requires a Shell:** This method depends on having a shell (e.g., /bin/sh or /bin/bash) available in the production container, which is often discouraged from a security perspective.
 
 
-#### 5.3.2. Option B: Automatic OOM Dumps
+#### 6.3.2. Option B: Automatic OOM Dumps
 This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The **cons** with this approach is an **increased surface of attack**, with the introduction diagnostic tools as mentioned before. 
 
 Configuration:
@@ -261,7 +302,7 @@ Optional: Analyze the dump locally using dotnet-dump
 dotnet-dump analyze ./crash_dump.dmp
 ~~~
 
-#### 5.3.3. Option C: On-Demand Sidecar via Deployment Patching
+#### 6.3.3. Option C: On-Demand Sidecar via Deployment Patching
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
 
@@ -368,7 +409,7 @@ Remove the sidecar. After collecting the dump, patch the deployment again to rem
 oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json --patch-file remove-sidecar.json
 ~~~
 
-#### 5.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
+#### 6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
@@ -384,7 +425,7 @@ You specify an image for the ephemeral container that contains the necessary dia
 **Cons:**
 - Kubernetes Version Dependent: The kubectl debug `--target` command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates.
 
-##### 5.3.4.1  Example Commands:
+##### 6.3.4.1. Example Commands
 
 ~~~
 # 1. Get the pod name
@@ -470,7 +511,7 @@ sh-4.4$
 ~~~
 
 
-##### 5.3.4.2 The Mystery of the Missing /app/dumps Directory
+##### 6.3.4.2. The Mystery of the Missing /app/dumps Directory
 
 If you were sharing processes, why did this command fail inside your debug container?
 
@@ -496,7 +537,7 @@ Since the dotnet process (PID 1) is running in the original container, it has fu
 
 Think of it like this: You used a remote control (dotnet-dump) from your room to tell a robot (dotnet process) in the next room to write a file on a table (/app/dumps) that only exists in its room. 🤖
 
-##### 5.3.4.3  **Why `kubectl debug` is used instead of `oc debug`**
+##### 6.3.4.3. Why `kubectl debug` is used instead of `oc debug`
 
 For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
 
@@ -506,7 +547,7 @@ The key difference between the two commands lies in how they achieve this:
 
 Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
 
-##### 5.3.4.4  `kubectl` vs. `oc`: A Quick Comparison
+##### 6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison
 
 While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
 
@@ -535,7 +576,7 @@ Here is a summary of the key differences:
 * **Use `kubectl` if:** You are writing scripts that need to be portable across any Kubernetes cluster (not just OpenShift) and you are only interacting with standard Kubernetes resources.
 * **Use `oc` if:** You are working with an OpenShift or MicroShift cluster. It provides a much richer, more integrated experience by giving you access to all the advanced features OpenShift builds on top of Kubernetes. **For daily work on OpenShift, `oc` is always the recommended tool.**
 
-#### 5.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container
+#### 6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container
 This method enhances Option D by adhering to strict security policies that forbid shells even in debug images. It uses a purpose-built, shell-less debug container with a compiled utility that automates the dump collection process.
 
 **How it works:**
@@ -653,7 +694,7 @@ drwxr-xr-x. 1 root       root              19 Sep 11 16:09 ..
 sh-4.4$
 ~~~
 
-#### 5.3.6. Option F: Deploying with a Hardened Security Context
+#### 6.3.6. Option F: Deploying with a Hardened Security Context
 
 This method demonstrates how to run the application under a highly restrictive, non-root security context. It serves as a best-practice example for production environments where security is paramount. This approach uses a dedicated service account and a custom Security Context Constraint (SCC) to enforce strict security rules from the start.
 
@@ -778,7 +819,158 @@ Session ended, the ephemeral container will not be restarted but may be reattach
 [redhat@rhel96-microshift419-vm2 kubernetes]$ 
 ~~~
 
-### 5.4. Limits & LimitaRanges
+
+
+#### 6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging
+
+When using `kubectl debug` to attach ephemeral containers, be aware that performing this action repeatedly on the **same pod instance** can lead to instability.
+
+Each debug session adds a new ephemeral container to the pod's specification and status. Over time, this history of terminated containers can clutter the pod object and may cause issues with the Kubelet and container runtime.
+
+**Symptoms of this instability include:**
+
+  * The `kubectl debug` command hanging and failing to provide a shell.
+  * Standard commands like `oc logs` failing with errors such as `unable to retrieve container logs`.
+  * The pod getting stuck in a `Terminating` state when you try to delete it normally.
+
+**Best Practice / Solution:**
+Treat the pod instance you are debugging as disposable. After one or two debug sessions, the recommended procedure is to **delete the pod** and allow its controller (Deployment, ReplicaSet, etc.) to create a fresh, clean instance.
+
+```bash
+# Delete the pod to get a clean instance for the next debug session
+oc delete pod <your-pod-name>
+```
+
+If the pod becomes stuck in the `Terminating` state, you may need to force its deletion as a last resort:
+
+```bash
+# Use this only if a normal delete fails
+oc delete pod <your-pod-name> --force --grace-period=0
+```
+
+Of course. Here is the rest of the `README.md` section, detailing the step-by-step instructions that follow the prerequisites we just defined.
+
+-----
+
+#### 6.3.8. baseOS access through nsenter
+
+After completing the prerequisites, follow these steps to generate the dump.
+
+#### **Prerequisites (Host Setup)**
+
+  * **SSH Access**: You must have SSH access to the MicroShift node where the target pod is running.
+  * **Root Privileges**: You need `sudo` or `root` privileges on the node.
+  * **`.NET` Debugging Tools on the Host**: The `createdump` utility must be made available on the Base OS. Choose one of the two options below.
+
+##### **Option A: Copy `createdump` from an Existing Container (Recommended)**
+
+This is the most efficient method if the debug container image is already present on the node, as it doesn't require any external downloads.
+
+1.  **Start a Temporary Helper Container**:
+    We'll use `podman` (available on MicroShift nodes) to start a temporary container from your debug image in the background. This gives us access to its filesystem.
+
+    ```bash
+    # Replace with your actual debug image if different
+    sudo podman run -d --name temp-debugger quay.io/rhn_support_arolivei/dotnet-debug:v1 sleep infinity
+    ```
+
+2.  **Copy the `createdump` Binary to the Host**:
+    Find the path to `createdump` inside the container (it's often in `/usr/local/bin` or within the SDK path) and copy it to a standard location on the host.
+
+    ```bash
+    # Copy the utility from the container to the host's /usr/local/bin
+    sudo podman cp temp-debugger:/usr/local/bin/createdump /usr/local/bin/createdump
+    ```
+
+3.  **Clean Up**:
+    Remove the temporary container.
+
+    ```bash
+    sudo podman rm -f temp-debugger
+    ```
+
+##### **Option B: Download and Extract the .NET SDK Tarball**
+
+Use this method if you prefer to have the full SDK available on the host or cannot run a temporary container.
+
+1.  **Download the SDK**:
+    On a machine with internet access, download the official .NET SDK binaries for Linux x64.
+
+    ```bash
+    # Example for .NET 8 SDK
+    wget https://download.visualstudio.microsoft.com/download/pr/25345091-6284-4443-8511-995f5434193c/a24ed1732055a4097e3a31c5b8b9560f/dotnet-sdk-8.0.401-linux-x64.tar.gz
+    ```
+
+2.  **Transfer and Extract**:
+    Copy the `tar.gz` file to your MicroShift node (e.g., with `scp`) and extract it to a location like `/opt/dotnet`.
+
+    ```bash
+    # On the MicroShift node
+    sudo mkdir -p /opt/dotnet
+    sudo tar zxf dotnet-sdk-8.0.401-linux-x64.tar.gz -C /opt/dotnet
+    ```
+
+3.  **Make `createdump` Accessible**:
+    The utility is now on the host, but it's deep inside the extracted folder. Create a symbolic link to it from `/usr/local/bin` for easy access.
+
+    ```bash
+    # The exact version folder (8.0.8) might differ. Adjust the path as needed.
+    sudo ln -s /opt/dotnet/shared/Microsoft.NETCore.App/8.0.8/createdump /usr/local/bin/createdump
+    ```
+
+-----
+
+After completing either **Option A** or **Option B**, the `createdump` command will be available on your host, and you can proceed with the rest of the steps for generating the dump from the Base OS.
+
+1.  **Find the Container's Host PID**
+    From the host's perspective, the container's main process is just a regular Linux process. Use `ps` to find its PID and export it as a variable for the next steps.
+
+    ```bash
+    # Find the PID of your dotnet process
+    ps aux | grep DotNetMemoryLeakApp.dll
+
+    # Example Output:
+    # 1000180+  2533  0.2  1.0 4038164 169476 ?      Sl   14:00   0:01 dotnet /app/DotNetMemoryLeakApp.dll
+
+    # Export the PID for use in subsequent commands (replace 2533 with your PID)
+    export DOTNET_PID=2533
+    ```
+
+2.  **Enter the Container's Mount Namespace**
+    To ensure that file paths are correct (i.e., `/app/dumps` points to the container's volume), use the **`nsenter`** utility. This command will give you a new shell session that sees the filesystem exactly as the container does.
+
+    ```bash
+    sudo nsenter -t $DOTNET_PID -m -- bash
+    ```
+
+    Your command prompt will change, indicating you are now operating within the container's **mount namespace**.
+
+3.  **Generate the Memory Dump**
+    From inside the `nsenter` shell, execute the `createdump` command. It targets the **host PID** you found earlier, but it writes the file to a path (`/app/dumps/...`) that is valid from the container's point of view.
+
+    ```bash
+    # This command is run INSIDE the nsenter shell
+    createdump -u -o /app/dumps/coredump-from-host.dmp $DOTNET_PID
+    ```
+
+4.  **Exit and Copy the File**
+    First, leave the special `nsenter` shell to return to your normal SSH session on the host.
+
+    ```bash
+    # Inside the nsenter shell
+    exit
+    ```
+
+    Now, from your **local machine** (not the node's SSH session), use the standard `kubectl cp` command to retrieve the dump file from the running pod using the Kubernetes API.
+
+    ```bash
+    # On your local machine
+    export POD_NAME=$(kubectl get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app-secure -o jsonpath='{.items[0].metadata.name}')
+
+    kubectl cp "$POD_NAME":/app/dumps/coredump-from-host.dmp ./coredump-from-host.dmp -c dotnet-app-secure
+    ```
+
+### 6.4. Limits & LimitaRanges
 
 
 In a Kubernetes environment, managing compute resources like CPU and Memory is not just a best practice; it is critical for ensuring application performance and cluster stability. This is especially true for single-node deployments like MicroShift and self-contained air-gapped systems.
@@ -855,10 +1047,10 @@ spec:
 
 By applying a LimitRange to your namespaces, you create a powerful safety net that significantly improves the stability and predictability of your cluster—a necessity for a production-grade, single-node system.
 
-## 6. Security & Troubleshooting Considerations
+## 7. Security & Troubleshooting Considerations
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.
 
-### 6.1. Pod Security
+### 7.1. Pod Security
 
 Kubernetes environments, including OpenShift and MicroShift, utilize powerful security enforcement mechanisms to govern pod behavior and permissions. These are primarily implemented through policies such as Security Context Constraints (SCCs), which are specific to OpenShift, and the Kubernetes-native Pod Security Admission (PSA).
 
@@ -866,32 +1058,32 @@ In a hardened cluster, it is common for a default, restrictive security policy t
 
 Consequently, if the securityContext defined in a deployment manifest includes settings that are disallowed by the active policy (for example, attempting to run as a specific user ID or requesting certain capabilities), the Kubernetes API server will reject the configuration. This typically results in an error during deployment, with messages such as Warning: would violate PodSecurity or Error creating: pods "..." is forbidden: violates PodSecurity "restricted".
 
-### 6.2. SYS_PTRACE Capability
+### 7.2. SYS_PTRACE Capability
 Requirement: Tools like dotnet-dump collect need the CAP_SYS_PTRACE capability to attach to another process and inspect its memory.
 Challenge: Strict security policies often disallow or strip this capability from containers (e.g., drop: ALL is common in restricted policies). You might see errors like Invalid value: "SYS_PTRACE": capability may not be added.
 Solution: To enable SYS_PTRACE for interactive debugging, you typically need to:
 Ensure your securityContext in deployment.yaml add: - SYS_PTRACE (and doesn't drop: ALL).
 Bind your ServiceAccount to a more permissive SCC (e.g., privileged) or have a cluster administrator adjust the namespace's Pod Security Enforcement to baseline or eventually bind a custom SCC to the ServiceAccount.
 
-### 6.3. seccompProfile
+### 7.3. seccompProfile
 Requirement: Containers often define a seccompProfile (e.g., RuntimeDefault) for enhanced security by filtering syscalls.
 Challenge: In very strict environments, even setting seccompProfile: type: RuntimeDefault might be forbidden, leading to errors like Forbidden: seccomp may not be set.
 Solution: If seccomp is blocked, you might need to remove the seccompProfile lines from your deployment.yaml's securityContext and rely solely on the privileged SCC to provide an unconfined or permissive seccomp profile.
 
-### 6.4. TMPDIR and IPC Issues
+### 7.4. TMPDIR and IPC Issues
 Requirement: dotnet diagnostic tools use temporary directories (often /tmp/) for inter-process communication (IPC) when connecting to a target process.
 Challenge: If /tmp/ is not properly writable for the container's assigned user, or if TMPDIR environment variables are inconsistent between the diagnostic tool and the target application, connection issues can arise (e.g., "Please verify that /tmp/ is writable by the current user").
 Solution:
 Explicitly set TMPDIR=/app/dumps/tmp for both the application and diagnostic containers in deployment.yaml.
 Ensure /app/dumps/tmp is created and made world-writable (chmod 777) at runtime via a command/args in your container definition, as volume mounts can overwrite built-in directories.
 
-### 6.5. Resource Limits and OOM Killer Race Conditions
+### 7.5. Resource Limits and OOM Killer Race Conditions
 Challenge: If your application is actively consuming memory and approaching its resources.limits.memory, the operating system's OOM killer might terminate the process before the .NET runtime has a chance to fully write a crash dump, especially for full dumps.
 Solution:
 Temporarily increase the resources.limits.memory for your application container in deployment.yaml to provide a larger buffer, allowing more time for dump generation.
 Rely on the automatic OOM dumps (Option A), as they are designed to capture the state at the moment of crash.
 
-## 7. External References & Further Reading
+## 8. External References & Further Reading
 For a deeper dive into the technologies and concepts explored in this project, refer to the following official documentation and resources:
 
 - **.NET Diagnostics**
@@ -911,8 +1103,8 @@ For a deeper dive into the technologies and concepts explored in this project, r
   - Building Container Images in OpenShift: https://docs.openshift.com/container-platform/latest/builds/index.html
   - Troubleshooting OpenShift Pods: https://docs.openshift.com/container-platform/latest/nodes/nodes-pods-debug-container-issues.html
 
-## 8. Contributing
+## 9. Contributing
 Feel free to open issues or submit pull requests for any improvements or bug fixes.
 
-## 9. License
+## 10. License
 This project is licensed under the Apache License 2.0. See the LICENSE file for details.

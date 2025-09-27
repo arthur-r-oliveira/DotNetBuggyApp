@@ -1,0 +1,86 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dotnet-memory-leak-app
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: dotnet-memory-leak-app
+    app.kubernetes.io/part-of: dotnet-memory-leak-app
+    app.kubernetes.io/component: application
+  annotations:
+    # Red Hat ACM specific annotations
+    apps.open-cluster-management.io/ocm-managed: "true"
+    argocd.argoproj.io/sync-wave: "0"
+    # Additional ACM annotations for better integration
+    argocd.argoproj.io/sync-options: "Prune=true,CreateNamespace=true,ServerSideApply=true"
+    # Health check configuration
+    argocd.argoproj.io/health-check-timeout: "300s"
+    # Auto-sync configuration (optional - remove if manual sync is preferred)
+    argocd.argoproj.io/sync-policy: "automated,prune=true,selfHeal=true"
+spec:
+  project: default
+  source:
+    # Point to the kubernetes directory containing the kustomization.yaml
+    path: kubernetes
+    repoURL: https://github.com/your-org/DotNetBuggyApp.git  # Update with actual repository URL
+    targetRevision: HEAD
+    # Use Kustomize for resource management
+    kustomize:
+      # Enable common labels for better resource identification
+      commonLabels:
+        app.kubernetes.io/name: dotnet-memory-leak-app
+        app.kubernetes.io/part-of: dotnet-memory-leak-app
+        app.kubernetes.io/managed-by: argocd
+      # Enable common annotations
+      commonAnnotations:
+        argocd.argoproj.io/sync-wave: "0"
+        apps.open-cluster-management.io/ocm-managed: "true"
+      # Image updates (if needed for different environments)
+      images:
+        - name: quay.io/rhn_support_arolivei/dotnet-memory-leak-app
+          newTag: v1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dotnet-memory-leak-app
+  # Sync policy configuration
+  syncPolicy:
+    # Automated sync configuration
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true
+      - Prune=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    # Retry configuration
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    # Ignore differences for fields that might change frequently
+    ignoreDifferences:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+      - group: ""
+        kind: Service
+        jsonPointers:
+          - /spec/clusterIP
+  # Revision history limit
+  revisionHistoryLimit: 10
+  # Health check configuration
+  healthChecks:
+    - apiVersion: v1
+      kind: Service
+      name: dotnet-memory-leak-service
+      namespace: dotnet-memory-leak-app
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: dotnet-memory-leak-app
+      namespace: dotnet-memory-leak-app

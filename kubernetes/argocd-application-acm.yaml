@@ -1,0 +1,124 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dotnet-memory-leak-app-acm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: dotnet-memory-leak-app
+    app.kubernetes.io/part-of: dotnet-memory-leak-app
+    app.kubernetes.io/component: application
+    # ACM specific labels
+    apps.open-cluster-management.io/ocm-managed: "true"
+    cluster.open-cluster-management.io/clusterset: "default"
+  annotations:
+    # Red Hat ACM specific annotations
+    apps.open-cluster-management.io/ocm-managed: "true"
+    argocd.argoproj.io/sync-wave: "0"
+    # ACM placement and policy annotations
+    apps.open-cluster-management.io/placement: "dotnet-app-placement"
+    policy.open-cluster-management.io/categories: "CM Configuration Management"
+    policy.open-cluster-management.io/controls: "CM-2 Baseline Configuration"
+    policy.open-cluster-management.io/standards: "NIST SP 800-53"
+    # Sync configuration
+    argocd.argoproj.io/sync-options: "Prune=true,CreateNamespace=true,ServerSideApply=true"
+    argocd.argoproj.io/health-check-timeout: "300s"
+    # Auto-sync with self-healing
+    argocd.argoproj.io/sync-policy: "automated,prune=true,selfHeal=true"
+    # ACM compliance and governance
+    apps.open-cluster-management.io/compliance: "required"
+    apps.open-cluster-management.io/risk-level: "medium"
+spec:
+  project: default
+  source:
+    path: kubernetes
+    repoURL: https://github.com/your-org/DotNetBuggyApp.git  # Update with actual repository URL
+    targetRevision: HEAD
+    kustomize:
+      # Common labels for ACM resource identification
+      commonLabels:
+        app.kubernetes.io/name: dotnet-memory-leak-app
+        app.kubernetes.io/part-of: dotnet-memory-leak-app
+        app.kubernetes.io/managed-by: argocd
+        apps.open-cluster-management.io/ocm-managed: "true"
+        cluster.open-cluster-management.io/clusterset: "default"
+      # Common annotations
+      commonAnnotations:
+        argocd.argoproj.io/sync-wave: "0"
+        apps.open-cluster-management.io/ocm-managed: "true"
+        policy.open-cluster-management.io/categories: "CM Configuration Management"
+      # Image updates for different environments
+      images:
+        - name: quay.io/rhn_support_arolivei/dotnet-memory-leak-app
+          newTag: v1
+      # Patches for ACM-specific configurations
+      patches:
+        - target:
+            kind: Deployment
+            name: dotnet-memory-leak-app
+          patch: |-
+            - op: add
+              path: /metadata/labels/apps.open-cluster-management.io~1ocm-managed
+              value: "true"
+            - op: add
+              path: /metadata/annotations/apps.open-cluster-management.io~1ocm-managed
+              value: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dotnet-memory-leak-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - Prune=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    ignoreDifferences:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+          - /spec/template/spec/containers/0/image
+      - group: ""
+        kind: Service
+        jsonPointers:
+          - /spec/clusterIP
+          - /spec/ports/0/nodePort
+      - group: ""
+        kind: PersistentVolumeClaim
+        jsonPointers:
+          - /status
+  revisionHistoryLimit: 10
+  # Health checks for ACM compliance
+  healthChecks:
+    - apiVersion: v1
+      kind: Service
+      name: dotnet-memory-leak-service
+      namespace: dotnet-memory-leak-app
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: dotnet-memory-leak-app
+      namespace: dotnet-memory-leak-app
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      name: dotnet-memory-leak-dumps
+      namespace: dotnet-memory-leak-app
+  # Info for ACM dashboard
+  info:
+    - name: "Application Type"
+      value: "DotNet Memory Leak Application"
+    - name: "Environment"
+      value: "Development"
+    - name: "Team"
+      value: "Platform Engineering"
+    - name: "Compliance Level"
+      value: "Required"

@@ -13,23 +13,25 @@ spec:
       labels:
         app: dotnet-memory-leak-app
     spec:
-      shareProcessNamespace: true
+      shareProcessNamespace: false
       serviceAccountName: dotnet-app-sa
-      # Removed top-level securityContext here as it might conflict with SCCs for runAsUser/NonRoot
-      # Pod-level security context removed to comply with OpenShift SCCs.
-      # Container-level context will be used instead.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
             claimName: dotnet-memory-leak-dumps
-        - name: diag-socket # Define the shared volume
-          emptyDir: {}
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi
       containers:
         - name: dotnet-app
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
-            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -37,11 +39,13 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c"]
           args:
             - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll
           ports:
             - containerPort: 8881
+            name: http
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8881"
@@ -50,14 +54,38 @@ spec:
             - name: COMPlus_DbgCrashDumpType
               value: "3"
             - name: COMPlus_DbgMiniDumpName
-              value: "/app/dumps/dump.dmp"
+              value: "/app/dumps/dump.%e.%p.%t.dmp"
             - name: TMPDIR
               value: "/tmp"
           volumeMounts:
             - mountPath: /app/dumps
               name: dump-storage
-            - name: diag-socket # Mount the shared volume
+            - name: tmp-volume
               mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8881
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8881
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8881
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 10
           resources:
             requests:
               cpu: "500m"

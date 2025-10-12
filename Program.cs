@@ -13,6 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Add health checks
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -25,7 +28,12 @@ if (app.Environment.IsDevelopment())
 // Set the ASP.NET Core URL to listen on TCP port 8881
 app.Urls.Add("http://+:8881");
 
-app.UseHttpsRedirection();
+// Configure health checks
+app.MapHealthChecks("/healthz");
+app.MapHealthChecks("/readyz");
+
+// Disable HTTPS redirection for MicroShift/OpenShift (TLS handled by Route)
+// app.UseHttpsRedirection();
 
 // New endpoint to render README.md as a webpage
 app.MapGet("/readme", async (HttpContext context) =>

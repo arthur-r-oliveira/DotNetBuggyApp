@@ -47,8 +47,9 @@ This repository does contains a `.NET` web service specifically engineered to **
 
 * **Controlled Memory Leak Simulation**: Provides an endpoint to trigger a continuous memory allocation pattern.
 * **Automated Crash Dump Generation**: Configured to automatically create `.NET` crash dumps (`ELF` format) when the application experiences an OOM or other critical failures.
-* **On-Demand Diagnostic Tooling**: Integrates `.NET` CLI diagnostic tools (`dotnet-dump`, `dotnet-trace`, `dotnet-counters`, `dotnet-gcdump`) directly into the application image and/or a dedicated sidecar container for live analysis.
-* **Containerized Environment Focus**: Demonstrates best practices for deploying `.NET` applications in OpenShift/MicroShift, including security configurations, resource management via LimitRanges, and ServiceAccount/SCC usage.
+* **On-Demand Diagnostic Tooling**: Integrates `.NET` CLI diagnostic tools (`dotnet-dump`, `dotnet-trace`, `dotnet-counters`, `dotnet-gcdump`) via dedicated debug containers for live analysis.
+* **Security-Hardened Deployment**: Demonstrates production-ready security practices including non-root containers, read-only filesystems, network policies, and minimal RBAC.
+* **MicroShift Optimized**: Specifically designed for single-node MicroShift deployments with appropriate resource limits and storage configurations.
 * **Air-Gapped Deployment Support**: Includes instructions and examples for deploying in environments without direct internet access to container registries.
 
 ## 3. Motivation
@@ -109,7 +110,13 @@ Before proceeding, ensure you have:
 * **MicroShift** installed and running, or access to an OpenShift cluster.
 * `kubectl` or `oc` CLI configured and connected to your cluster.
 * A container registry (e.g., Quay.io, or local Podman storage) available for pushing images.
-* **Cluster Administrator Privileges (Potentially Required)**: Depending on your cluster's security policies, you might need administrator assistance to modify Pod Security Enforcement levels or bind your ServiceAccount to a more permissive `SecurityContextConstraints` (SCC) like `privileged`, especially if you intend to use interactive debugging tools.
+* **Storage**: Ensure your cluster has a default StorageClass (e.g., topolvm for MicroShift) for PVC creation.
+* **Network Policies**: If your cluster enforces NetworkPolicies, ensure the provided policy is compatible with your CNI.
+
+**MicroShift Specific Notes:**
+* MicroShift uses topolvm as the default storage provisioner
+* Routes are available by default; NodePort is an alternative if Routes are disabled
+* Ephemeral containers require Kubernetes 1.25+ (check with `kubectl version`)
 
 ### 5.2. Building & Pushing the Container Image
 
@@ -1048,6 +1055,20 @@ spec:
 By applying a LimitRange to your namespaces, you create a powerful safety net that significantly improves the stability and predictability of your cluster—a necessity for a production-grade, single-node system.
 
 ## 7. Security & Troubleshooting Considerations
+
+This application implements production-ready security practices:
+
+### 7.0. Security Features Implemented
+
+* **Non-root containers**: Application runs as non-root user with OpenShift arbitrary UID support
+* **Read-only root filesystem**: Container filesystem is read-only with writable volumes for dumps and temp files
+* **Minimal capabilities**: All Linux capabilities dropped except those explicitly required
+* **Network isolation**: NetworkPolicy restricts ingress/egress traffic
+* **Minimal RBAC**: ServiceAccount has only necessary namespace-scoped permissions
+* **Health checks**: Liveness, readiness, and startup probes for reliable operation
+* **Resource limits**: CPU and memory limits prevent resource exhaustion
+* **Seccomp profiles**: Runtime default seccomp profile for syscall filtering
+
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.
 
 ### 7.1. Pod Security

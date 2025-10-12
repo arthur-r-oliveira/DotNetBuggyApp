@@ -8,6 +8,7 @@ resources:
   - serviceaccount.yaml
   - pvc.yaml
   - rbac.yaml
+  - networkpolicy.yaml
   - svc.yaml
   - route.yaml
   - deployment.yaml

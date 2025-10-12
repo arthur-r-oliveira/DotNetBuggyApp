@@ -24,27 +24,8 @@ roleRef:
   name: dotnet-app-role
   apiGroup: rbac.authorization.k8s.io
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: dotnet-app-clusterrole
-rules:
-  - apiGroups: [""]
-    resources: ["nodes", "persistentvolumes"]
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: dotnet-app-clusterrolebinding
-subjects:
-  - kind: ServiceAccount
-    name: dotnet-app-sa
-    namespace: dotnet-memory-leak-app
-roleRef:
-  kind: ClusterRole
-  name: dotnet-app-clusterrole
-  apiGroup: rbac.authorization.k8s.io
+# Removed unnecessary cluster-scoped permissions
+# The application only needs namespace-scoped access to pods and services
 ---
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -65,15 +46,5 @@ fsGroup:
 users:
   - system:serviceaccount:dotnet-memory-leak-app:dotnet-app-sa
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: dotnet-app-privileged-scc-binding # A unique name for this binding
-subjects:
-  - kind: ServiceAccount
-    name: dotnet-app-sa
-    namespace: dotnet-memory-leak-app
-roleRef:
-  kind: ClusterRole
-  name: privileged # Bind to the cluster's default 'privileged' SCC
-  apiGroup: rbac.authorization.k8s.io
+# Removed privileged SCC binding - use custom SCC instead
+# The custom dotnet-scc provides only necessary SYS_PTRACE capability

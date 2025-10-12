@@ -23,7 +23,7 @@
         - [6.3.3.3. Why `kubectl debug` instead of `oc debug`](#6333-why-kubectl-debug-instead-of-oc-debug)
       - [6.3.4. Option D: Secure On-Demand Dumps via Shell-less Ephemeral Container](#634-option-d-secure-on-demand-dumps-via-shell-less-ephemeral-container)
       - [6.3.5. Option E: Deploying with a Hardened Security Context](#635-option-e-deploying-with-a-hardened-security-context)
-      - [6.3.6. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#636-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
+      - [6.3.6. kubectl debug Important Limitation: Pod Instability After Repeated Debugging](#636-kubectl-debug-important-limitation-pod-instability-after-repeated-debugging)
       - [6.3.7. baseOS access through nsenter](#637-baseos-access-through-nsenter)
     - [6.4. Limits & LimitaRanges](#64-limits--limitaranges)
     - [6.5. Testing and Validation](#65-testing-and-validation)
@@ -730,7 +730,7 @@ Session ended, the ephemeral container will not be restarted but may be reattach
 
 
 
-#### 6.3.6. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging
+#### 6.3.6. kubectl debug Important Limitation: Pod Instability After Repeated Debugging
 
 When using `kubectl debug` to attach ephemeral containers, be aware that performing this action repeatedly on the **same pod instance** can lead to instability.
 

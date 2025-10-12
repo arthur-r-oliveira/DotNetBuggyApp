@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM registry.redhat.io/rhel8/dotnet-80:8.0 AS build
+FROM registry.access.redhat.com/ubi9/dotnet-80:8.0 AS build
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ COPY . .
 RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o /app/out --no-restore
 
 # Stage 2: Create the final runtime image (production - no debug tools)
-FROM registry.redhat.io/rhel8/dotnet-80-runtime:8.0 AS final
+FROM registry.access.redhat.com/ubi9/dotnet-80-runtime:8.0 AS final
 
 WORKDIR /app
 

@@ -64,6 +64,7 @@ This repository does contains a `.NET` web service specifically engineered to **
 * **Automated Crash Dump Generation**: Configured to automatically create `.NET` crash dumps (`ELF` format) when the application experiences an OOM or other critical failures.
 * **On-Demand Diagnostic Tooling**: Integrates `.NET` CLI diagnostic tools (`dotnet-dump`, `dotnet-trace`, `dotnet-counters`, `dotnet-gcdump`) via dedicated debug containers for live analysis.
 * **Security-Hardened Deployment**: Demonstrates production-ready security practices including non-root containers, read-only filesystems, network policies, and minimal RBAC.
+* **Red Hat UBI RHEL9 Compliant**: Uses exclusively Red Hat Universal Base Images (UBI) RHEL9 for .NET 8.0 applications, ensuring enterprise support and security compliance.
 * **MicroShift Optimized**: Specifically designed for single-node MicroShift deployments with appropriate resource limits and storage configurations.
 * **Air-Gapped Deployment Support**: Includes instructions and examples for deploying in environments without direct internet access to container registries.
 
@@ -88,8 +89,8 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
 
 ### Container Configuration
-- **`Containerfile`**: Multi-stage container build with production runtime-only image (no debug tools)
-- **`Containerfile-debug`**: Specialized debug container for secure dump collection
+- **`Containerfile`**: Multi-stage container build using Red Hat UBI RHEL9 .NET 8.0 images (production runtime-only, no debug tools)
+- **`Containerfile-debug`**: Specialized debug container using Red Hat UBI RHEL9 .NET 8.0 SDK for secure dump collection
 - **`configure_core_dump.sh`**: Shell script for core dump configuration (deprecated for container use)
 
 ### Kubernetes Deployment Manifests (`kubernetes/` directory)
@@ -1031,6 +1032,7 @@ This application implements production-ready security practices:
 This application implements a defense-in-depth security strategy with multiple layers of protection:
 
 #### 7.0.1. Container Security
+* **Red Hat UBI RHEL9 base images**: Uses exclusively Red Hat Universal Base Images for enterprise support and security compliance
 * **Non-root containers**: Application runs as non-root user with OpenShift arbitrary UID support
 * **Read-only root filesystem**: Container filesystem is read-only with writable volumes for dumps and temp files
 * **Minimal capabilities**: All Linux capabilities dropped except those explicitly required

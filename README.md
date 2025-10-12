@@ -236,68 +236,10 @@ fail: Program[0]
 ### 6.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)
+#### 6.3.1. Option A: Automatic OOM Dumps (Recommended)
+This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. 
 
-This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
-
-Configuration:
-
-Your `Containerfile` or `Dockerfile` must be adapted to install the .NET diagnostic tools alongside your application code. This is typically done by installing them as global tools.
-
-Example Containerfile layer:
-
-~~~
-# Install .NET diagnostic tools
-RUN dotnet tool install --global dotnet-dump --version 8.*
-RUN dotnet tool install --global dotnet-trace --version 8.*
-RUN dotnet tool install --global dotnet-counters --version 8.*
-
-# Add the tools to the PATH
-ENV PATH="${PATH}:/root/.dotnet/tools"
-~~~
-
-Our `Containerfile` in this repository does already include that changes. To make this workflow simpler, we are using the same image in all options here by now.
-
-**Workflow:**
-
-- Gain shell access to the running application container.
-- Identify the application's process ID (PID).
-- Execute dotnet-dump to collect the dump and save it to the shared volume.
-
-Example Commands:
-
-~~~
-# 1. Get the pod name
-export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-
-# 2. Access the application container's shell
-# Note: We are targeting the main 'dotnet-app' container
-oc rsh -c dotnet-app "$POD_NAME"
-
-# 3. Inside the container, find the main app's PID (usually PID 1)
-ps -ef
-
-# 4. Collect a dump of the application (replace <PID> with the actual PID)
-dotnet-dump collect --process-id <PID> -o /app/dumps/app_collected_dump.dmp
-
-# 5. Exit the container's shell
-exit
-~~~
-
-**Cons of this Approach:**
-
-- **Larger Image Size:** Including the SDK or diagnostic tools in your final application image increases its size. This goes against the best practice of keeping production images as lean as possible, leading to slower deployment times and higher storage costs.
-- **Increased Attack Surface:** Every tool and library added to your production image is a potential vector for security vulnerabilities. A minimal image with only the necessary runtime and application code is more secure.
-- **Immutable Tooling:** The diagnostic tools are version-locked with the application image. If a new, critical version of dotnet-dump is released, you must rebuild and redeploy the entire application image to update it. Other methods, like sidecars or ephemeral containers, allow for more flexible tool versioning.
-- **Requires a Shell:** This method depends on having a shell (e.g., /bin/sh or /bin/bash) available in the production container, which is often discouraged from a security perspective.
-
-
-#### 6.3.2. Option B: Automatic OOM Dumps
-This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The **cons** with this approach is an **increased surface of attack**, with the introduction diagnostic tools as mentioned before. 
-
-Configuration:
-
-- The base OCI does include .NET tools, like `dotnet-dump`, embeeded together with the application runtime. 
+Configuration: 
 - These variables are pre-configured in your deployment.yaml:
   - COMPlus_DbgEnableElfDumpOnCrash=1: Enables ELF crash dump generation.
   - COMPlus_DbgCrashDumpType=3: Specifies a "full" dump.
@@ -327,7 +269,7 @@ Optional: Analyze the dump locally using dotnet-dump
 dotnet-dump analyze ./crash_dump.dmp
 ~~~
 
-#### 6.3.3. Option C: On-Demand Sidecar via Deployment Patching
+#### 6.3.2. Option B: On-Demand Sidecar via Deployment Patching
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
 
@@ -434,7 +376,7 @@ Remove the sidecar. After collecting the dump, patch the deployment again to rem
 oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json --patch-file remove-sidecar.json
 ~~~
 
-#### 6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
+#### 6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
@@ -536,72 +478,15 @@ sh-4.4$
 ~~~
 
 
-##### 6.3.4.2. The Mystery of the Missing /app/dumps Directory
+##### 6.3.3.2. Understanding Ephemeral Container Filesystem Access
 
-If you were sharing processes, why did this command fail inside your debug container?
+**Important Note**: Ephemeral containers with `--target` share the process namespace but NOT the mount namespace. The debug container cannot see `/app/dumps` directly, but `dotnet-dump` works because it controls the target process, which writes the dump to its own filesystem.
 
-~~~
-bash-4.4$ ls -l /app/dumps
-ls: cannot access '/app/dumps': No such file or directory
-~~~
+##### 6.3.3.3. Why `kubectl debug` instead of `oc debug`
 
-This reveals another critical concept: sharing the process namespace is not the same as sharing the mount namespace (the filesystem).
+For live-process debugging, `kubectl debug --target` is required because it shares the PID namespace with the target container, allowing access to running processes. `oc debug` creates a separate pod and cannot access the original application's processes.
 
-Ephemeral containers injected with `--target` get their own separate set of volumeMounts. They do not inherit the mounts from the target container. That's why your debug container had no knowledge of the `/app/dumps` directory, which is a PVC mount in your original dotnet-app container.
-
-**So How Did the File Get Written?**
-If the debug container couldn't see /app/dumps, how did this command succeed?
-
-~~~
-TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect ... -o /app/dumps/app_collected_dump2.dmp
-~~~
-
-Because dotnet-dump is just a control tool. It attaches to the target process (PID 1) and tells it what to do. The actual work of writing the memory dump to the file is performed by the target dotnet process itself.
-
-Since the dotnet process (PID 1) is running in the original container, it has full access to its own filesystem, including the mounted PVC at `/app/dumps`.
-
-Think of it like this: You used a remote control (dotnet-dump) from your room to tell a robot (dotnet process) in the next room to write a file on a table (/app/dumps) that only exists in its room. 🤖
-
-##### 6.3.4.3. Why `kubectl debug` is used instead of `oc debug`
-
-For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
-
-The key difference between the two commands lies in how they achieve this:
-- `kubectl debug` with the --target flag is specifically designed for this purpose. It works by adding a temporary ephemeral container to the existing, running Pod. This new container joins the Pod's existing namespaces, including the PID namespace, giving it direct access to the application's processes.
-- Currently, `oc debug`, in contrast, creates an entirely new and separate Pod by copying the configuration from the original Deployment or DeploymentConfig. While this new pod has a similar environment (volumes, service account), it has its own isolated PID namespace. As a result, it cannot see or interact with the processes running in the original application pod, making it unsuitable for live dump collection.
-
-Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
-
-##### 6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison
-
-While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
-
-The most important thing to know is that **`oc` is a superset of `kubectl`**. This means that any `kubectl` command you know will also work with `oc`. You can simply replace `kubectl` with `oc` and it will function as expected.
-
-For example:
-* `kubectl get pods` is the same as `oc get pods`.
-* `kubectl apply -f my-app.yaml` is the same as `oc apply -f my-app.yaml`.
-
-However, `oc` includes extra, powerful features designed specifically for OpenShift's developer and enterprise-focused workflows.
-
-Here is a summary of the key differences:
-
-| Feature | `kubectl` (Standard Kubernetes) | `oc` (OpenShift) |
-| :--- | :--- | :--- |
-| **Core Functionality** | Manages standard Kubernetes resources (Pods, Deployments, Services, etc.). | **Includes all `kubectl` functionality** and extends it. |
-| **Focus** | A general-purpose tool for cluster administrators and operators. | Adds many features focused on developer productivity and application lifecycle. |
-| **Authentication** | Relies on a pre-configured `kubeconfig` file for cluster access. | Includes a built-in `oc login` command that integrates with OpenShift's OAuth server for easy authentication. |
-| **Project Management**| Manages `Namespaces`. | Manages `Projects`, which are essentially Namespaces with added user permissions and security policies. Provides easy commands like `oc new-project` and `oc project <name>`. |
-| **Application Deployment** | Deploys applications from YAML manifests (`kubectl apply`). | Adds powerful commands like **`oc new-app`** which can build and deploy an application directly from source code (e.g., from a Git repository) or an existing image. |
-| **Builds & Images** | Does not have built-in concepts for building container images. | Natively understands OpenShift-specific resources like **`BuildConfig`** and **`ImageStream`**. It includes commands like `oc start-build` to trigger image builds from source. |
-| **Networking** | Manages `Ingress` resources for external access, which requires a separate ingress controller. | Natively manages **`Route`** resources, which are a simpler, integrated way to expose services to the outside world, often with automated TLS configuration. |
-
-**Summary: When to Use Which?**
-
-* **Use `kubectl` if:** You are writing scripts that need to be portable across any Kubernetes cluster (not just OpenShift) and you are only interacting with standard Kubernetes resources.
-* **Use `oc` if:** You are working with an OpenShift or MicroShift cluster. It provides a much richer, more integrated experience by giving you access to all the advanced features OpenShift builds on top of Kubernetes. **For daily work on OpenShift, `oc` is always the recommended tool.**
-
-#### 6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container
+#### 6.3.4. Option D: Secure On-Demand Dumps via Shell-less Ephemeral Container
 This method enhances Option D by adhering to strict security policies that forbid shells even in debug images. It uses a purpose-built, shell-less debug container with a compiled utility that automates the dump collection process.
 
 **How it works:**
@@ -719,7 +604,7 @@ drwxr-xr-x. 1 root       root              19 Sep 11 16:09 ..
 sh-4.4$
 ~~~
 
-#### 6.3.6. Option F: Deploying with a Hardened Security Context
+#### 6.3.5. Option E: Deploying with a Hardened Security Context
 
 This method demonstrates how to run the application under a highly restrictive, non-root security context. It serves as a best-practice example for production environments where security is paramount. This approach uses a dedicated service account and a custom Security Context Constraint (SCC) to enforce strict security rules from the start.
 
@@ -846,7 +731,7 @@ Session ended, the ephemeral container will not be restarted but may be reattach
 
 
 
-#### 6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging
+#### 6.3.6. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging
 
 When using `kubectl debug` to attach ephemeral containers, be aware that performing this action repeatedly on the **same pod instance** can lead to instability.
 
@@ -877,7 +762,7 @@ Of course. Here is the rest of the `README.md` section, detailing the step-by-st
 
 -----
 
-#### 6.3.8. baseOS access through nsenter
+#### 6.3.7. baseOS access through nsenter
 
 After completing the prerequisites, follow these steps to generate the dump.
 

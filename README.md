@@ -28,12 +28,27 @@
       - [6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#637-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
       - [6.3.8. baseOS access through nsenter](#638-baseos-access-through-nsenter)
     - [6.4. Limits & LimitaRanges](#64-limits--limitaranges)
+    - [6.5. Testing and Validation](#65-testing-and-validation)
+      - [6.5.1. Health Check Validation](#651-health-check-validation)
+      - [6.5.2. Security Posture Validation](#652-security-posture-validation)
+      - [6.5.3. Memory Leak Simulation Test](#653-memory-leak-simulation-test)
+      - [6.5.4. Network Policy Testing](#654-network-policy-testing)
   - [7. Security & Troubleshooting Considerations](#7-security--troubleshooting-considerations)
+    - [7.0. Security Features Implemented](#70-security-features-implemented)
+      - [7.0.1. Container Security](#701-container-security)
+      - [7.0.2. Kubernetes Security](#702-kubernetes-security)
+      - [7.0.3. Operational Security](#703-operational-security)
+      - [7.0.4. Security Context Rationale](#704-security-context-rationale)
     - [7.1. Pod Security](#71-pod-security)
     - [7.2. SYS_PTRACE Capability](#72-sys_ptrace-capability)
     - [7.3. seccompProfile](#73-seccompprofile)
     - [7.4. TMPDIR and IPC Issues](#74-tmpdir-and-ipc-issues)
     - [7.5. Resource Limits and OOM Killer Race Conditions](#75-resource-limits-and-oom-killer-race-conditions)
+    - [7.6. Operational Procedures](#76-operational-procedures)
+      - [7.6.1. Deployment Verification Checklist](#761-deployment-verification-checklist)
+      - [7.6.2. Debugging Workflow](#762-debugging-workflow)
+      - [7.6.3. Security Incident Response](#763-security-incident-response)
+      - [7.6.4. Maintenance Procedures](#764-maintenance-procedures)
   - [8. External References & Further Reading](#8-external-references--further-reading)
   - [9. Contributing](#9-contributing)
   - [10. License](#10-license)
@@ -73,23 +88,26 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
 
 ### Container Configuration
-- **`Containerfile`**: Multi-stage container build with embedded .NET diagnostic tools
+- **`Containerfile`**: Multi-stage container build with production runtime-only image (no debug tools)
 - **`Containerfile-debug`**: Specialized debug container for secure dump collection
-- **`configure_core_dump.sh`**: Shell script for core dump configuration
+- **`configure_core_dump.sh`**: Shell script for core dump configuration (deprecated for container use)
 
 ### Kubernetes Deployment Manifests (`kubernetes/` directory)
-- **`deployment.yaml`**: Standard deployment configuration
-- **`deployment-secure.yaml`**: Hardened security deployment variant
+- **`deployment.yaml`**: Security-hardened production deployment configuration
+- **`deployment-secure.yaml`**: Additional hardened security deployment variant
 - **`kustomization.yaml`**: Kustomize configuration for resource management
 - **`ns.yaml`**: Namespace definition
 - **`serviceaccount.yaml`**: Service account configuration
-- **`rbac.yaml`**: Role-based access control definitions
+- **`rbac.yaml`**: Minimal namespace-scoped RBAC definitions
+- **`networkpolicy.yaml`**: Network isolation policy for ingress/egress control
 - **`scc-and-rbac-secure.yaml`**: Security context constraints for hardened deployment
 - **`svc.yaml`**: Service definition
 - **`route.yaml`**: OpenShift route configuration
 - **`pvc.yaml`**: Persistent volume claim for dump storage
 - **`limitrange.yaml`**: Resource limits and constraints
 - **`patch/`**: JSON patch files for dynamic sidecar injection
+- **`argocd-application.yaml`**: ArgoCD Application manifest for GitOps deployment
+- **`argocd-application-acm.yaml`**: ArgoCD Application manifest with Red Hat ACM integration
 
 ### Diagnostic Tools
 - **`tools/pid-finder/main.go`**: Go utility for automated process discovery and dump collection
@@ -1054,20 +1072,113 @@ spec:
 
 By applying a LimitRange to your namespaces, you create a powerful safety net that significantly improves the stability and predictability of your cluster—a necessity for a production-grade, single-node system.
 
+## 6.5. Testing and Validation
+
+### 6.5.1. Health Check Validation
+
+The application includes comprehensive health checks to ensure reliable operation:
+
+```bash
+# Test health endpoints
+export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+
+# Test liveness probe
+curl -f http://$ROUTE_HOST/healthz
+
+# Test readiness probe  
+curl -f http://$ROUTE_HOST/readyz
+
+# Check pod status and probe results
+oc get pods -n dotnet-memory-leak-app -o wide
+oc describe pod <pod-name> -n dotnet-memory-leak-app
+```
+
+### 6.5.2. Security Posture Validation
+
+Verify that security controls are properly applied:
+
+```bash
+# Check pod security context
+oc get pod <pod-name> -n dotnet-memory-leak-app -o yaml | grep -A 20 securityContext
+
+# Verify network policy is applied
+oc get networkpolicy -n dotnet-memory-leak-app
+
+# Check RBAC permissions
+oc auth can-i get pods --as=system:serviceaccount:dotnet-memory-leak-app:dotnet-app-sa -n dotnet-memory-leak-app
+
+# Verify SCC binding
+oc get scc dotnet-scc -o yaml
+```
+
+### 6.5.3. Memory Leak Simulation Test
+
+```bash
+# Trigger memory leak and monitor
+curl http://$ROUTE_HOST/triggerMemoryLeak &
+
+# Monitor memory usage
+oc top pod -n dotnet-memory-leak-app
+
+# Watch for OOM and restart
+oc get pods -n dotnet-memory-leak-app -w
+
+# Check for crash dumps after restart
+oc rsh <pod-name> -n dotnet-memory-leak-app -- ls -la /app/dumps/
+```
+
+### 6.5.4. Network Policy Testing
+
+```bash
+# Test ingress from allowed sources (should work)
+curl -f http://$ROUTE_HOST/healthz
+
+# Test egress restrictions (should be limited to DNS and monitoring)
+oc rsh <pod-name> -n dotnet-memory-leak-app -- nslookup kubernetes.default.svc.cluster.local
+```
+
 ## 7. Security & Troubleshooting Considerations
 
 This application implements production-ready security practices:
 
 ### 7.0. Security Features Implemented
 
+This application implements a defense-in-depth security strategy with multiple layers of protection:
+
+#### 7.0.1. Container Security
 * **Non-root containers**: Application runs as non-root user with OpenShift arbitrary UID support
 * **Read-only root filesystem**: Container filesystem is read-only with writable volumes for dumps and temp files
 * **Minimal capabilities**: All Linux capabilities dropped except those explicitly required
-* **Network isolation**: NetworkPolicy restricts ingress/egress traffic
-* **Minimal RBAC**: ServiceAccount has only necessary namespace-scoped permissions
-* **Health checks**: Liveness, readiness, and startup probes for reliable operation
-* **Resource limits**: CPU and memory limits prevent resource exhaustion
 * **Seccomp profiles**: Runtime default seccomp profile for syscall filtering
+* **No debug tools in production**: Diagnostic tools are only available in separate debug containers
+
+#### 7.0.2. Kubernetes Security
+* **Network isolation**: NetworkPolicy restricts ingress/egress traffic to only necessary communication
+* **Minimal RBAC**: ServiceAccount has only necessary namespace-scoped permissions (no cluster-wide access)
+* **Security Context Constraints**: Custom SCC provides only required SYS_PTRACE capability for debugging
+* **Resource limits**: CPU and memory limits prevent resource exhaustion and node starvation
+
+#### 7.0.3. Operational Security
+* **Health checks**: Liveness, readiness, and startup probes for reliable operation and failure detection
+* **Automount service account token disabled**: Reduces attack surface by not automatically mounting service account tokens
+* **Process namespace isolation**: `shareProcessNamespace: false` prevents process visibility between containers
+* **Unique dump naming**: Crash dumps include timestamps to prevent overwrites and enable tracking
+
+#### 7.0.4. Security Context Rationale
+
+**Why these specific security settings?**
+
+1. **`runAsNonRoot: true`**: Prevents privilege escalation attacks and follows principle of least privilege
+2. **`readOnlyRootFilesystem: true`**: Prevents malicious code from writing to container filesystem, forcing all writes to mounted volumes
+3. **`capabilities.drop: [ALL]`**: Removes all Linux capabilities, then explicitly adds only what's needed (SYS_PTRACE for debugging)
+4. **`seccompProfile: RuntimeDefault`**: Filters system calls to prevent exploitation of dangerous syscalls
+5. **`automountServiceAccountToken: false`**: Reduces attack surface by not automatically providing cluster credentials
+6. **NetworkPolicy**: Implements zero-trust networking by default-deny with explicit allow rules
+
+**Security vs. Functionality Balance:**
+- Debug capabilities are preserved through dedicated debug containers and SCC bindings
+- Production image is minimal and secure by default
+- Diagnostic tools are available on-demand without compromising production security
 
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.
 
@@ -1103,6 +1214,86 @@ Challenge: If your application is actively consuming memory and approaching its 
 Solution:
 Temporarily increase the resources.limits.memory for your application container in deployment.yaml to provide a larger buffer, allowing more time for dump generation.
 Rely on the automatic OOM dumps (Option A), as they are designed to capture the state at the moment of crash.
+
+## 7.6. Operational Procedures
+
+### 7.6.1. Deployment Verification Checklist
+
+Before considering the deployment successful, verify:
+
+- [ ] Pod is running and ready (all probes passing)
+- [ ] Health endpoints respond correctly (`/healthz`, `/readyz`)
+- [ ] NetworkPolicy is applied and traffic is restricted
+- [ ] RBAC permissions are minimal and namespace-scoped only
+- [ ] SCC is bound and provides only necessary capabilities
+- [ ] Resource limits are appropriate for your environment
+- [ ] PVC is bound and accessible for dump storage
+
+### 7.6.2. Debugging Workflow
+
+When debugging is needed:
+
+1. **Assess the situation**: Determine if you need live debugging or can wait for automatic dumps
+2. **Choose the appropriate method**: 
+   - Automatic OOM dumps (Option B) for crash scenarios
+   - Ephemeral containers (Option D/E) for live debugging
+   - Sidecar injection (Option C) for extended debugging sessions
+3. **Apply minimal privileges**: Use the custom SCC that provides only SYS_PTRACE
+4. **Clean up after debugging**: Remove debug containers and restore original deployment
+5. **Delete pod after multiple debug sessions**: Prevent pod instability from accumulated ephemeral containers
+
+### 7.6.3. Security Incident Response
+
+If security concerns arise:
+
+1. **Immediate response**:
+   ```bash
+   # Isolate the pod by scaling down
+   oc scale deployment dotnet-memory-leak-app --replicas=0 -n dotnet-memory-leak-app
+   
+   # Check for unauthorized access
+   oc logs <pod-name> -n dotnet-memory-leak-app --previous
+   ```
+
+2. **Investigation**:
+   ```bash
+   # Preserve crash dumps for analysis
+   oc cp <pod-name>:/app/dumps/ ./dumps-backup/ -n dotnet-memory-leak-app
+   
+   # Check network policy violations
+   oc get events -n dotnet-memory-leak-app --sort-by='.lastTimestamp'
+   ```
+
+3. **Recovery**:
+   ```bash
+   # Restore from clean deployment
+   oc apply -k kubernetes/
+   
+   # Verify security posture
+   oc get pod <pod-name> -n dotnet-memory-leak-app -o yaml | grep -A 10 securityContext
+   ```
+
+### 7.6.4. Maintenance Procedures
+
+**Regular maintenance tasks**:
+
+```bash
+# Clean up old crash dumps (create a CronJob for this)
+oc rsh <pod-name> -n dotnet-memory-leak-app -- find /app/dumps -name "*.dmp" -mtime +7 -delete
+
+# Update image tags for security patches
+oc set image deployment/dotnet-memory-leak-app dotnet-app=quay.io/your-namespace/dotnet-memory-leak-app:v2 -n dotnet-memory-leak-app
+
+# Verify resource usage and adjust limits if needed
+oc top pod -n dotnet-memory-leak-app
+oc describe limitrange dotnet-limitrange -n dotnet-memory-leak-app
+```
+
+**Monitoring and alerting**:
+- Set up alerts for pod restarts (indicates potential OOM)
+- Monitor PVC usage to prevent storage exhaustion
+- Track network policy violations in cluster logs
+- Alert on RBAC permission changes
 
 ## 8. External References & Further Reading
 For a deeper dive into the technologies and concepts explored in this project, refer to the following official documentation and resources:

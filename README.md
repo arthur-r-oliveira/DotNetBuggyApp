@@ -15,18 +15,16 @@
     - [6.1. Triggering a Memory Leak](#61-triggering-a-memory-leak)
     - [6.2. Monitoring Application Logs](#62-monitoring-application-logs)
     - [6.3. Collecting Crash Dumps](#63-collecting-crash-dumps)
-      - [6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)](#631-option-a-on-demand-dumps-via-tools-embedded-in-application-image-unsecure)
-      - [6.3.2. Option B: Automatic OOM Dumps](#632-option-b-automatic-oom-dumps)
-      - [6.3.3. Option C: On-Demand Sidecar via Deployment Patching](#633-option-c-on-demand-sidecar-via-deployment-patching)
-      - [6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#634-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
-        - [6.3.4.1. Example Commands](#6341-example-commands)
-        - [6.3.4.2. The Mystery of the Missing /app/dumps Directory](#6342-the-mystery-of-the-missing-appdumps-directory)
-        - [6.3.4.3. Why `kubectl debug` is used instead of `oc debug`](#6343-why-kubectl-debug-is-used-instead-of-oc-debug)
-        - [6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison](#6344-kubectl-vs-oc-a-quick-comparison)
-      - [6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container](#635-option-e-secure-on-demand-dumps-via-shell-less-ephemeral-container)
-      - [6.3.6. Option F: Deploying with a Hardened Security Context](#636-option-f-deploying-with-a-hardened-security-context)
-      - [6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#637-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
-      - [6.3.8. baseOS access through nsenter](#638-baseos-access-through-nsenter)
+      - [6.3.1. Option A: Automatic OOM Dumps (Recommended)](#631-option-a-automatic-oom-dumps-recommended)
+      - [6.3.2. Option B: On-Demand Sidecar via Deployment Patching](#632-option-b-on-demand-sidecar-via-deployment-patching)
+      - [6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#633-option-c-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+        - [6.3.3.1. Example Commands](#6331-example-commands)
+        - [6.3.3.2. Understanding Ephemeral Container Filesystem Access](#6332-understanding-ephemeral-container-filesystem-access)
+        - [6.3.3.3. Why `kubectl debug` instead of `oc debug`](#6333-why-kubectl-debug-instead-of-oc-debug)
+      - [6.3.4. Option D: Secure On-Demand Dumps via Shell-less Ephemeral Container](#634-option-d-secure-on-demand-dumps-via-shell-less-ephemeral-container)
+      - [6.3.5. Option E: Deploying with a Hardened Security Context](#635-option-e-deploying-with-a-hardened-security-context)
+      - [6.3.6. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#636-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
+      - [6.3.7. baseOS access through nsenter](#637-baseos-access-through-nsenter)
     - [6.4. Limits & LimitaRanges](#64-limits--limitaranges)
     - [6.5. Testing and Validation](#65-testing-and-validation)
       - [6.5.1. Health Check Validation](#651-health-check-validation)
@@ -393,7 +391,7 @@ You specify an image for the ephemeral container that contains the necessary dia
 **Cons:**
 - Kubernetes Version Dependent: The kubectl debug `--target` command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates.
 
-##### 6.3.4.1. Example Commands
+##### 6.3.3.1. Example Commands
 
 ~~~
 # 1. Get the pod name

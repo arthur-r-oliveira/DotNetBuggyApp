@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dotnet-memory-leak-service-secure
+  namespace: dotnet-memory-leak-app
+spec:
+  selector:
+    app: dotnet-memory-leak-app-secure
+  ports:
+    - port: 8881
+      protocol: TCP
+      targetPort: 8881
+  type: ClusterIP

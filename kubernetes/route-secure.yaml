@@ -1,0 +1,11 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dotnet-memory-leak-route-secure
+  namespace: dotnet-memory-leak-app
+spec:
+  port:
+    targetPort: 8881
+  to:
+    kind: Service
+    name: dotnet-memory-leak-service-secure

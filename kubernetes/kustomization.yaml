@@ -9,8 +9,16 @@ resources:
   - pvc.yaml
   - rbac.yaml
   - networkpolicy.yaml
+  - host-coredump/coredump-pv.yaml
+  - host-coredump/coredump-pvc.yaml
+  - host-coredump/dump-cleanup-cronjob.yaml
   - svc.yaml
   - route.yaml
+  - svc-host-coredump.yaml
+  - route-host-coredump.yaml
+  - svc-secure.yaml
+  - route-secure.yaml
   - deployment.yaml
   - deployment-secure.yaml
+  - deployment-host-coredump.yaml
   - scc-and-rbac-secure.yaml

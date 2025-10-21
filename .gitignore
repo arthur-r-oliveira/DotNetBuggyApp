@@ -1,0 +1,23 @@
+# Private case files - should not be committed
+04229084.md
+case 04229094 - draft.md
+
+# Container Images (too large for GitHub)
+*.tar
+*.tar.gz
+*.tar.bz2
+
+# Build outputs
+bin/
+obj/
+out/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS files
+.DS_Store
+Thumbs.db

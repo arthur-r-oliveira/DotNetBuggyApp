@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM registry.access.redhat.com/ubi9/dotnet-80:8.0 AS build
+FROM registry.access.redhat.com/ubi8/dotnet-80:latest AS build
 
 WORKDIR /app
 
@@ -14,6 +14,10 @@ RUN mkdir -p /app/tools && chown -R 1001:0 /app/tools && \
  && dotnet tool install --tool-path /app/tools dotnet-gcdump
  
 RUN chown -R 1001:0 /opt/app-root/.local/share/NuGet/
+
+# Ensure /app directory has proper ownership for build
+RUN chown -R 1001:0 /app
+
 # Switch back to non-root user for building the application
 USER 1001
 # --- Build Application ---
@@ -24,7 +28,7 @@ COPY . .
 RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o /app/out --no-restore
 
 # Stage 2: Create the final runtime image (production - no debug tools)
-FROM registry.access.redhat.com/ubi9/dotnet-80-runtime:8.0 AS final
+FROM registry.access.redhat.com/ubi8/dotnet-80-runtime:latest AS final
 
 WORKDIR /app
 

@@ -1,0 +1,65 @@
+# Stage 1: Build the application and gather dependencies
+FROM registry.access.redhat.com/ubi8/dotnet-80:latest AS builder
+
+WORKDIR /app
+
+# Switch to root to set proper permissions
+USER root
+
+# Ensure /app directory has proper ownership
+RUN chown -R 1001:0 /app
+
+# Switch back to non-root user for build
+USER 1001
+
+# Copy and build the application
+COPY *.csproj ./
+RUN dotnet restore
+COPY . .
+RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o out --no-self-contained
+
+# Switch back to root for dependency gathering
+USER root
+
+# --- Gather only necessary runtime dependencies ---
+RUN mkdir /runtime-deps
+RUN cp -r /usr/lib64/libicu* /runtime-deps/ 2>/dev/null || true
+RUN cp -r /usr/lib64/libstdc* /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/ld-linux-x86-64.so.2 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libc.so.6 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libdl.so.2 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libgcc_s.so.1 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libm.so.6 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libpthread.so.0 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/librt.so.1 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libz.so.1 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libssl.so.3 /runtime-deps/ 2>/dev/null || true
+RUN cp /lib64/libcrypto.so.3 /runtime-deps/ 2>/dev/null || true
+
+# Stage 2: Create the final hardened runtime image from scratch
+FROM scratch
+
+# Copy essential libraries from the builder stage
+COPY --from=builder /runtime-deps/ /lib64/
+
+# Copy the .NET runtime from the builder stage
+COPY --from=builder /usr/lib64/dotnet/ /usr/lib64/dotnet/
+
+# Copy the application binaries
+WORKDIR /app
+COPY --from=builder /app/out .
+
+# --- Environment Variables for Crash Dumps ---
+ENV COMPlus_DbgEnableElfDumpOnCrash=1
+ENV COMPlus_DbgCrashDumpType=3
+ENV COMPlus_DbgMiniDumpName=/app/dumps/dump.dmp
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+
+# Set ulimit for coredumps (essential for crash dump functionality)
+ENV ULIMIT_CORE=unlimited
+
+# --- Application Config ---
+ENV ASPNETCORE_URLS=http://+:8881
+EXPOSE 8881
+
+ENTRYPOINT ["/usr/lib64/dotnet/dotnet", "/app/DotNetMemoryLeakApp.dll"]

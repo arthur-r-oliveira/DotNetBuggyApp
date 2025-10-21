@@ -37,10 +37,8 @@ spec:
             capabilities:
               drop:
                 - ALL
-          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
-          command: ["/bin/sh", "-c"]
-          args:
-            - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1-hardened
+          # No command/args needed - the hardened image has ENTRYPOINT set
           ports:
             - containerPort: 8881
           env:

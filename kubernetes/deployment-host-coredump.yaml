@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dotnet-memory-leak-app
+  name: dotnet-memory-leak-app-host-coredump
   namespace: dotnet-memory-leak-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dotnet-memory-leak-app
+      app: dotnet-memory-leak-app-host-coredump
   template:
     metadata:
       labels:
-        app: dotnet-memory-leak-app
+        app: dotnet-memory-leak-app-host-coredump
     spec:
       shareProcessNamespace: false
       serviceAccountName: dotnet-app-sa
@@ -40,9 +40,7 @@ spec:
               type: RuntimeDefault
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
           imagePullPolicy: IfNotPresent
-          command: ["/bin/sh", "-c"]
-          args:
-            - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll
+          # No command/args needed - the image has ENTRYPOINT set
           ports:
             - containerPort: 8881
               name: http
@@ -54,7 +52,7 @@ spec:
             - name: COMPlus_DbgCrashDumpType
               value: "3"
             - name: COMPlus_DbgMiniDumpName
-              value: "/app/dumps/dump.%e.%p.%t.dmp"
+              value: "/app/dumps/host-dump.%e.%p.%t.dmp"
             - name: TMPDIR
               value: "/tmp"
           volumeMounts:

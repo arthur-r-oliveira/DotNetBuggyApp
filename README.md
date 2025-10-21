@@ -238,28 +238,45 @@ The project offers multiple strategies for collecting crash dumps, suitable for 
 #### 6.3.1. Option A: Automatic OOM Dumps (Recommended)
 This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. 
 
+**Enhanced Features:**
+- **Timestamped dump files**: Dump files include process ID and timestamp for better tracking
+- **Programmatic coredump configuration**: The application automatically configures `prctl` and `ulimit` settings
+- **Host-level coredump support**: Optional host-level coredump collection via PersistentVolumes
+- **Automated cleanup**: CronJob for cleaning up old dump files
+
 Configuration: 
 - These variables are pre-configured in your deployment.yaml:
-  - COMPlus_DbgEnableElfDumpOnCrash=1: Enables ELF crash dump generation.
-  - COMPlus_DbgCrashDumpType=3: Specifies a "full" dump.
-  - COMPlus_DbgMiniDumpName=/app/dumps/dump.dmp: Sets the output path.
-- The /app/dumps directory is backed by a PersistentVolumeClaim to ensure persistence.
+  - `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables ELF crash dump generation
+  - `COMPlus_DbgCrashDumpType=3`: Specifies a "full" dump
+  - `COMPlus_DbgMiniDumpName=/app/dumps/dump.%e.%p.%t.dmp`: Sets timestamped output path
+- The `/app/dumps` directory is backed by a PersistentVolumeClaim to ensure persistence
+- **Programmatic setup**: The application automatically creates the dumps directory and configures coredump settings
 
 Workflow:
-- Trigger the memory leak.
-- Allow the application to run until it crashes (you'll see restarts in oc get pods).
-- Once the pod crashes and restarts, a dump file named dump.dmp (or similar, like core.<PID>) will be present in the /app/dumps volume.
+- Trigger the memory leak
+- Allow the application to run until it crashes (you'll see restarts in `oc get pods`)
+- Once the pod crashes and restarts, a dump file with timestamp will be present in the `/app/dumps` volume
 
 Example Commands (after application crashes and restarts):
 ~~~
 # Get the name of a running pod (it might be a new instance after restart)
 export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
 
-# Verify the dump file exists (replace with your actual pod name)
+# Verify the dump file exists (look for timestamped files)
 oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
 
 # Copy the dump file from the pod to your local machine for analysis
-oc cp "$POD_NAME":/app/dumps/dump.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
+oc cp "$POD_NAME":/app/dumps/dump.*.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
+~~~
+
+**Host-Level Coredump Collection (Optional):**
+For enhanced security and host-level dump collection:
+~~~
+# Deploy host-level coredump configuration
+oc apply -f kubernetes/host-coredump/
+
+# Check host-level dumps (if configured)
+oc rsh "$POD_NAME" -c dotnet-app -- ls -l /var/crashdumps/
 ~~~
 
 Optional: Analyze the dump locally using dotnet-dump

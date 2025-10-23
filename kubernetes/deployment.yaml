@@ -23,7 +23,7 @@ spec:
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
-            claimName: dotnet-memory-leak-dumps
+            claimName: coredump-pvc
         - name: tmp-volume
           emptyDir:
             sizeLimit: 1Gi
@@ -38,7 +38,7 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1-base
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c"]
           args:
@@ -52,9 +52,9 @@ spec:
             - name: COMPlus_DbgEnableElfDumpOnCrash
               value: "1"
             - name: COMPlus_DbgCrashDumpType
-              value: "3"
+              value: "4"
             - name: COMPlus_DbgMiniDumpName
-              value: "/app/dumps/dump.%e.%p.%t.dmp"
+              value: "/app/dumps/core/host-dump.%e.%p.%t.dmp"
             - name: TMPDIR
               value: "/tmp"
           volumeMounts:

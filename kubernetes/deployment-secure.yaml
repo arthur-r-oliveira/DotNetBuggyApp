@@ -22,7 +22,7 @@ spec:
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
-            claimName: dotnet-memory-leak-dumps
+            claimName: coredump-pvc
         - name: diag-socket
           emptyDir: {}
       containers:
@@ -34,7 +34,7 @@ spec:
             capabilities:
               drop:
                 - ALL
-          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1-hardened
           # No command/args needed - the hardened image has ENTRYPOINT set
           ports:
             - containerPort: 8881
@@ -44,7 +44,7 @@ spec:
             - name: COMPlus_DbgEnableElfDumpOnCrash
               value: "1"
             - name: COMPlus_DbgCrashDumpType
-              value: "3"
+              value: "4"
             - name: COMPlus_DbgMiniDumpName
               value: "/app/dumps/dump.dmp"
             - name: TMPDIR

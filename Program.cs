@@ -171,4 +171,19 @@ app.MapGet("/triggerMemoryLeak", async (HttpContext context) =>
 .WithName("TriggerMemoryLeak")
 .WithOpenApi();
 
+// New endpoint to simulate a segmentation fault
+app.MapGet("/crash", () =>
+{
+    unsafe
+    {
+        // Attempt to write to an invalid memory address
+        // This will cause a segmentation fault
+        int* ptr = (int*)0x1; // An invalid memory address
+        *ptr = 123; // Dereference and assign a value, causing a crash
+    }
+    return Results.Ok("Attempting to crash the application..."); // This line will likely not be reached
+})
+.WithName("Crash")
+.WithOpenApi();
+
 app.Run();

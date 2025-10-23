@@ -1,0 +1,24 @@
+---
+# Sysctl configuration tasks for dotnet-coredump role
+
+- name: Create sysctl configuration file
+  ansible.builtin.copy:
+    dest: "{{ coredump_config_file }}"
+    content: |
+      kernel.core_pattern = {{ coredump_directory }}/core.%e.%p.%h.%t
+      fs.suid_dumpable = 2
+    mode: '0644'
+    owner: root
+    group: root
+  tags: sysctl
+
+- name: Apply sysctl configuration
+  ansible.builtin.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: "{{ coredump_config_file }}"
+  loop:
+    - { name: 'kernel.core_pattern', value: '{{ coredump_directory }}/core.%e.%p.%h.%t' }
+    - { name: 'fs.suid_dumpable', value: '2' }
+  tags: sysctl

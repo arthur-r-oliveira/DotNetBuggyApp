@@ -1,0 +1,13 @@
+---
+# Handlers for dotnet-coredump role
+
+- name: restart systemd
+  ansible.builtin.systemd:
+    name: systemd
+    state: restarted
+  when: ansible_os_family == "RedHat"
+
+- name: reload sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
+  when: ansible_os_family == "RedHat"

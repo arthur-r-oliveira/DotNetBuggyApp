@@ -1,0 +1,11 @@
+---
+# Variables for dotnet-coredump role
+
+# Required packages for coredump functionality
+required_packages:
+  - policycoreutils-python-utils
+  - setools-console
+
+# SELinux booleans to enable
+selinux_booleans:
+  - container_manage_cgroup

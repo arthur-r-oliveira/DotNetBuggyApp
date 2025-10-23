@@ -1,0 +1,40 @@
+---
+# Verification tasks for dotnet-coredump role
+
+- name: Verify coredump directory exists
+  ansible.builtin.stat:
+    path: "{{ coredump_directory }}"
+  register: coredump_dir_stat
+  tags: verification
+
+- name: Display coredump directory status
+  ansible.builtin.debug:
+    msg: "Coredump directory {{ coredump_directory }} exists: {{ coredump_dir_stat.stat.exists }}"
+
+- name: Verify sysctl configuration
+  ansible.builtin.command:
+    cmd: "sysctl {{ item }}"
+  loop:
+    - kernel.core_pattern
+    - fs.suid_dumpable
+  register: sysctl_output
+  tags: verification
+
+- name: Display sysctl configuration
+  ansible.builtin.debug:
+    msg: "{{ item.stdout }}"
+  loop: "{{ sysctl_output.results }}"
+  tags: verification
+
+- name: Check SELinux context of coredump directory
+  ansible.builtin.command:
+    cmd: "ls -Z {{ coredump_directory }}"
+  register: selinux_context
+  when: selinux_enabled.stat.exists
+  tags: verification
+
+- name: Display SELinux context
+  ansible.builtin.debug:
+    msg: "SELinux context: {{ selinux_context.stdout }}"
+  when: selinux_enabled.stat.exists and selinux_context is defined
+  tags: verification

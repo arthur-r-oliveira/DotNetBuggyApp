@@ -1,0 +1,23 @@
+---
+# Prerequisites tasks for dotnet-coredump role
+
+- name: Check if running on supported OS
+  ansible.builtin.stat:
+    path: /etc/redhat-release
+  register: redhat_release
+  failed_when: not redhat_release.stat.exists
+  tags: prerequisites
+
+- name: Display OS information
+  ansible.builtin.debug:
+    msg: "Configuring coredump on {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+- name: Check if SELinux is enabled
+  ansible.builtin.stat:
+    path: /sys/fs/selinux
+  register: selinux_enabled
+  tags: prerequisites
+
+- name: Display SELinux status
+  ansible.builtin.debug:
+    msg: "SELinux is {{ 'enabled' if selinux_enabled.stat.exists else 'disabled' }}"

@@ -1,0 +1,16 @@
+---
+# Ansible requirements for dotnet-coredump role
+
+# Note: This role uses built-in Ansible modules, so no external collections are required
+# The role uses:
+# - ansible.builtin.sysctl (built-in)
+# - ansible.builtin.command (built-in)
+# - ansible.builtin.file (built-in)
+# - ansible.builtin.stat (built-in)
+# - ansible.builtin.setup (built-in)
+# - ansible.builtin.package (built-in)
+
+# If you want to install from Galaxy (future)
+# roles:
+#   - name: dotnet-coredump
+#     version: "1.0.0"

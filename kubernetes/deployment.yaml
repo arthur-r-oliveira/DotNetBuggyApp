@@ -62,30 +62,6 @@ spec:
               name: dump-storage
             - name: tmp-volume
               mountPath: /tmp
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 8881
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 8881
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
-          startupProbe:
-            httpGet:
-              path: /
-              port: 8881
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 10
           resources:
             requests:
               cpu: "500m"

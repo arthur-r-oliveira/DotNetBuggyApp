@@ -46,7 +46,7 @@ spec:
             - name: COMPlus_DbgCrashDumpType
               value: "4"
             - name: COMPlus_DbgMiniDumpName
-              value: "/app/dumps/dump.dmp"
+              value: "/app/dumps/core/secure-dump.dmp"
             - name: TMPDIR
               value: "/tmp"
           volumeMounts:

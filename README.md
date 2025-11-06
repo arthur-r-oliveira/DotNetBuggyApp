@@ -15,7 +15,7 @@
     - [6.1. Triggering a Memory Leak](#61-triggering-a-memory-leak)
     - [6.2. Monitoring Application Logs](#62-monitoring-application-logs)
     - [6.3. Collecting Crash Dumps](#63-collecting-crash-dumps)
-      - [6.3.1. Option A: Automatic OOM Dumps (Recommended)](#631-option-a-automatic-oom-dumps-recommended)
+      - [6.3.1. Option A: Automatic Crash Dumps](#631-option-a-automatic-crash-dumps)
       - [6.3.2. Option B: On-Demand Sidecar via Deployment Patching](#632-option-b-on-demand-sidecar-via-deployment-patching)
       - [6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#633-option-c-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
         - [6.3.3.1. Example Commands](#6331-example-commands)
@@ -83,6 +83,7 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`Program.cs`**: Main application entry point with ASP.NET Core web API endpoints
   - `/triggerMemoryLeak`: Endpoint to initiate controlled memory allocation
   - `/readme`: Endpoint to render this README as a web page
+  - `/crash`: Endpoint to simulate a fatal application crash and trigger a coredump
 - **`MemoryLeakManager.cs`**: Static class managing memory allocation and tracking
 - **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
 
@@ -296,7 +297,7 @@ This approach uses the .NET runtime's built-in dump generation feature to write 
 
 ##### **Method 2: Kernel-Managed Dumps to a HostPath Volume**
 
-This method relies on the host node's Linux kernel to handle the coredump process. The application is configured to crash, and the kernel writes the dump to a directory on the host node, which is made available via a `hostPath` `PersistentVolume`. This is useful for deep system-level debugging or when you want to offload the dump generation from the .NET runtime.
+This method relies on the host node's Linux kernel to handle the coredump process. The application is configured to crash, and the kernel writes the dump to a directory on the host node, which is made available via a `hostPath` `PersistentVolume`. This is useful for deep system-level debugging or when you want to offload the dump generation from the .NET runtime. For this to work, the host node must be properly configured as detailed in the Host Configuration Guide.
 
 **Configuration (`deployment-host-coredump.yaml`):**
 - `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables the .NET runtime to cooperate with kernel dump generation.
@@ -328,18 +329,6 @@ This method relies on the host node's Linux kernel to handle the coredump proces
     # total 8052
     # -rw-r--r--. 1 root root 8242049 Nov  6 16:51 'host-dump.dotnet.1.1762444288.dmp'
     ~~~
-
-**Host-Level Coredump Collection (Optional):**
-
-For enhanced security and host-level dump collection:
-
-~~~
-# Deploy host-level coredump configuration
-oc apply -f kubernetes/host-coredump/
-
-# Check host-level dumps (if configured)
-oc rsh "$POD_NAME" -c dotnet-app -- ls -l /var/crashdumps/
-~~~
 
 Optional: Analyze the dump locally using dotnet-dump
 

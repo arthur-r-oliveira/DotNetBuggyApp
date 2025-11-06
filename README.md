@@ -235,42 +235,104 @@ fail: Program[0]
 ### 6.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 6.3.1. Option A: Automatic OOM Dumps (Recommended)
-This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. 
+#### 6.3.1. Option A: Automatic Crash Dumps
 
-**Enhanced Features:**
-- **Timestamped dump files**: Dump files include process ID and timestamp for better tracking
-- **Programmatic coredump configuration**: The application automatically configures `prctl` and `ulimit` settings
-- **Host-level coredump support**: Optional host-level coredump collection via PersistentVolumes
-- **Automated cleanup**: CronJob for cleaning up old dump files
+This is the most reliable method for capturing the application's state during a crash. The application can be configured in two primary ways: writing dumps directly to a standard PVC (recommended for most cloud-native scenarios) or leveraging the host node's kernel to write to a `hostPath` volume (useful for deep kernel-level diagnostics).
 
-Configuration: 
-- These variables are pre-configured in your deployment.yaml:
-  - `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables ELF crash dump generation
-  - `COMPlus_DbgCrashDumpType=3`: Specifies a "full" dump
-  - `COMPlus_DbgMiniDumpName=/app/dumps/dump.%e.%p.%t.dmp`: Sets timestamped output path
-- The `/app/dumps` directory is backed by a PersistentVolumeClaim to ensure persistence
-- **Programmatic setup**: The application automatically creates the dumps directory and configures coredump settings
+##### **Method 1: .NET Runtime Dumps to a CSI-backed PVC (Recommended)**
 
-Workflow:
-- Trigger the memory leak
-- Allow the application to run until it crashes (you'll see restarts in `oc get pods`)
-- Once the pod crashes and restarts, a dump file with timestamp will be present in the `/app/dumps` volume
+This approach uses the .NET runtime's built-in dump generation feature to write a crash dump directly to a `PersistentVolumeClaim` (PVC). This is the most portable and cloud-native method, as it works with any CSI-compliant storage provider and does not depend on the underlying node's configuration.
 
-Example Commands (after application crashes and restarts):
-~~~
-# Get the name of a running pod (it might be a new instance after restart)
-export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+**Configuration (`deployment.yaml`):**
+- `DOTNET_DbgEnableMiniDump=1`: Enables crash dump generation.
+- `DOTNET_DbgMiniDumpType=2`: Specifies a "full dump with heap".
+- `DOTNET_DbgMiniDumpName=/dumps/core.%e.%p.%t.dmp`: Sets the output path.
+- The `/dumps` directory is backed by the `dotnet-memory-leak-dumps` PVC, which is provisioned by a CSI storage class (e.g., `topolvm-provisioner`).
 
-# Verify the dump file exists (look for timestamped files)
-oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
+**Workflow & Sample Output:**
 
-# Copy the dump file from the pod to your local machine for analysis
-oc cp "$POD_NAME":/app/dumps/dump.*.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
-~~~
+1.  **Deploy and Verify:** Apply the manifests and ensure the PVC is bound and the pod is running.
+    ~~~bash
+    oc apply -k kubernetes/
+    oc get pvc dotnet-memory-leak-dumps
+    # NAME                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS          AGE
+    # dotnet-memory-leak-dumps   Bound    pvc-12b72273-bb68-49a1-94ff-71174412eb32   5Gi        RWO            topolvm-provisioner   14s
+    ~~~
+
+2.  **Trigger the crash:** Send a GET request to the `/crash` endpoint of the main application route.
+    ~~~bash
+    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+    curl http://$ROUTE_HOST/crash
+    ~~~
+
+3.  **Observe Logs:** The previous pod's logs will show the `[createdump]` output from the .NET runtime.
+    ~~~bash
+    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+    oc logs $POD_NAME --previous -c dotnet-app
+    # ...
+    # Process terminated. Simulating a fatal application error for coredump generation.
+    # [createdump] Writing minidump with heap to file /dumps/core.dotnet.1.1762445373.dmp
+    # [createdump] Written 133115904 bytes (32499 pages) to core file
+    # ...
+    ~~~
+
+4.  **Verify Dump File:** After the pod restarts, `rsh` into the new instance and verify the dump file exists in the `/dumps` PVC mount.
+    ~~~bash
+    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+    oc rsh $POD_NAME -c dotnet-app
+    sh-4.4$ ls -lh /dumps/
+    # -rw-------. 1 1000 1000 128M Nov  6 16:09 /dumps/core.dotnet.1.1762445373.dmp
+    ~~~
+
+5.  **Extract the Dump File:** Copy the dump file from the pod's persistent volume to your local machine for analysis.
+    ~~~bash
+    # Get the name of the dump file (assuming it's the only one)
+    DUMP_FILE=$(oc rsh $POD_NAME -c dotnet-app -- find /dumps -name '*.dmp' -printf "%f")
+
+    # Copy the file to your current directory
+    oc cp "dotnet-memory-leak-app/${POD_NAME}:/dumps/${DUMP_FILE}" "./${DUMP_FILE}" -c dotnet-app
+    # File "./core.dotnet.1.1762445373.dmp" downloaded
+    ~~~
+
+##### **Method 2: Kernel-Managed Dumps to a HostPath Volume**
+
+This method relies on the host node's Linux kernel to handle the coredump process. The application is configured to crash, and the kernel writes the dump to a directory on the host node, which is made available via a `hostPath` `PersistentVolume`. This is useful for deep system-level debugging or when you want to offload the dump generation from the .NET runtime.
+
+**Configuration (`deployment-host-coredump.yaml`):**
+- `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables the .NET runtime to cooperate with kernel dump generation.
+- `COMPlus_DbgCrashDumpType=4`: Specifies a "full dump with heap".
+- `COMPlus_DbgMiniDumpName=/var/crashdumps/core/host-dump.%e.%p.%t.dmp`: Sets the output path.
+- The `Program.cs` includes code to set `prctl(PR_SET_DUMPABLE, 1)` to signal to the kernel that the process is allowed to be dumped.
+- The `/var/crashdumps/core` directory is backed by a `hostPath` PV, pointing to a directory on the node.
+
+**Workflow & Sample Output:**
+
+1.  **Trigger the crash:** Use `curl` to send a GET request to the `/crash` endpoint of the `host-coredump` route.
+    ~~~bash
+    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route-host-coredump -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+    curl http://$ROUTE_HOST/crash
+    ~~~
+
+2.  **Observe Logs and Pod Status:** The pod will terminate and enter a `CrashLoopBackOff` state. The logs will show the `Environment.FailFast` message.
+    ~~~bash
+    oc get pods -l app=dotnet-memory-leak-app-host-coredump
+    # NAME                                                    READY   STATUS             RESTARTS      AGE
+    # dotnet-memory-leak-app-host-coredump-66d48744b5-994g2   0/1     CrashLoopBackOff   2 (28s ago)   10m
+    ~~~
+
+3.  **Verify Dump File on the Host:** SSH into the MicroShift/OpenShift node and check the `hostPath` directory for the newly created dump file.
+    ~~~bash
+    # On the OpenShift/MicroShift node
+    ls -la /var/crashdumps/core
+    
+    # total 8052
+    # -rw-r--r--. 1 root root 8242049 Nov  6 16:51 'host-dump.dotnet.1.1762444288.dmp'
+    ~~~
 
 **Host-Level Coredump Collection (Optional):**
+
 For enhanced security and host-level dump collection:
+
 ~~~
 # Deploy host-level coredump configuration
 oc apply -f kubernetes/host-coredump/
@@ -286,6 +348,7 @@ dotnet-dump analyze ./crash_dump.dmp
 ~~~
 
 #### 6.3.2. Option B: On-Demand Sidecar via Deployment Patching
+
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
 

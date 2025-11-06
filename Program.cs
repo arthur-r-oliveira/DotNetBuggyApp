@@ -174,14 +174,14 @@ app.MapGet("/triggerMemoryLeak", async (HttpContext context) =>
 // New endpoint to simulate a segmentation fault
 app.MapGet("/crash", () =>
 {
-    unsafe
-    {
-        // Attempt to write to an invalid memory address
-        // This will cause a segmentation fault
-        int* ptr = (int*)0x1; // An invalid memory address
-        *ptr = 123; // Dereference and assign a value, causing a crash
-    }
-    return Results.Ok("Attempting to crash the application..."); // This line will likely not be reached
+    // Use Environment.FailFast to trigger an immediate, unhandled process termination.
+    // This is the correct way to force a coredump from a managed application,
+    // as it bypasses any high-level exception handling (like in ASP.NET Core)
+    // and signals a catastrophic failure to the OS.
+    Environment.FailFast("Simulating a fatal application error for coredump generation.");
+    
+    // This line is unreachable but kept for endpoint mapping consistency.
+    return Results.Ok("Attempting to crash the application...");
 })
 .WithName("Crash")
 .WithOpenApi();

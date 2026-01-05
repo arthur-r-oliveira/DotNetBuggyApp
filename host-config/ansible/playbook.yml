@@ -1,0 +1,16 @@
+---
+# Main playbook for configuring .NET coredump capture on MicroShift hosts
+# This playbook uses the dotnet-coredump role for proper configuration management
+# Located in: host-config/ansible/playbook.yml
+
+- name: Configure MicroShift Hosts for .NET Coredump Capture
+  hosts: microshift_nodes
+  become: yes
+
+  vars:
+    # Override default variables if needed
+    # coredump_directory: "/custom/crashdumps"
+    # coredump_config_file: "/etc/sysctl.d/99-custom-coredump.conf"
+
+  roles:
+    - role: dotnet-coredump

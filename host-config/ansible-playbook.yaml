@@ -1,0 +1,107 @@
+---
+# Ansible playbook for configuring MicroShift hosts to enable .NET coredump capture
+# This playbook implements the host-level configuration required for Case 04229094
+# and ensures compliance with Red Hat support case solutions.
+#
+# Usage:
+#   ansible-playbook -i inventory host-config/ansible-playbook.yaml
+#
+# Prerequisites:
+#   - Ansible installed on control machine
+#   - SSH access to MicroShift nodes with sudo privileges
+#   - Inventory file with MicroShift node details
+
+- name: Configure MicroShift Hosts for .NET Coredump Capture
+  hosts: microshift_nodes
+  become: yes
+  vars:
+    coredump_directory: "/var/crashdumps"
+    coredump_config_file: "/etc/sysctl.d/99-coredump.conf"
+    
+  tasks:
+    - name: Create coredump directory
+      ansible.builtin.file:
+        path: "{{ coredump_directory }}"
+        state: directory
+        mode: '0777'
+        owner: root
+        group: root
+      tags:
+        - coredump
+        - directory
+
+    - name: Configure kernel parameters for coredumps
+      ansible.builtin.copy:
+        dest: "{{ coredump_config_file }}"
+        content: |
+          # Enable coredumps and set the pattern
+          # This configuration enables host-level coredump capture for .NET applications
+          # running in containers on MicroShift/OpenShift environments.
+          #
+          # Pattern explanation:
+          # %e = executable name
+          # %p = process ID  
+          # %h = hostname
+          # %t = timestamp
+          kernel.core_pattern = {{ coredump_directory }}/core.%e.%p.%h.%t
+          
+          # Allow setuid processes to dump core
+          # This is required for containerized applications to generate coredumps
+          fs.suid_dumpable = 2
+        mode: '0644'
+        owner: root
+        group: root
+        backup: yes
+      notify: Apply sysctl
+      tags:
+        - coredump
+        - sysctl
+
+    - name: Verify sysctl configuration
+      ansible.builtin.command:
+        cmd: sysctl -p {{ coredump_config_file }}
+      register: sysctl_test
+      failed_when: sysctl_test.rc != 0
+      tags:
+        - coredump
+        - verification
+
+    - name: Display current core pattern
+      ansible.builtin.command:
+        cmd: sysctl kernel.core_pattern
+      register: current_pattern
+      changed_when: false
+      tags:
+        - coredump
+        - verification
+
+    - name: Display current suid_dumpable setting
+      ansible.builtin.command:
+        cmd: sysctl fs.suid_dumpable
+      register: current_suid
+      changed_when: false
+      tags:
+        - coredump
+        - verification
+
+  handlers:
+    - name: Apply sysctl
+      ansible.builtin.command:
+        cmd: sysctl --system
+      listen: Apply sysctl
+      tags:
+        - coredump
+        - sysctl
+
+  post_tasks:
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "Coredump directory created: {{ coredump_directory }}"
+          - "Configuration file: {{ coredump_config_file }}"
+          - "Current core pattern: {{ current_pattern.stdout }}"
+          - "Current suid_dumpable: {{ current_suid.stdout }}"
+          - "Configuration applied successfully!"
+      tags:
+        - coredump
+        - summary

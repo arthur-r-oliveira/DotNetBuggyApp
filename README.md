@@ -15,25 +15,38 @@
     - [6.1. Triggering a Memory Leak](#61-triggering-a-memory-leak)
     - [6.2. Monitoring Application Logs](#62-monitoring-application-logs)
     - [6.3. Collecting Crash Dumps](#63-collecting-crash-dumps)
-      - [6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)](#631-option-a-on-demand-dumps-via-tools-embedded-in-application-image-unsecure)
-      - [6.3.2. Option B: Automatic OOM Dumps](#632-option-b-automatic-oom-dumps)
-      - [6.3.3. Option C: On-Demand Sidecar via Deployment Patching](#633-option-c-on-demand-sidecar-via-deployment-patching)
-      - [6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#634-option-d-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
-        - [6.3.4.1. Example Commands](#6341-example-commands)
-        - [6.3.4.2. The Mystery of the Missing /app/dumps Directory](#6342-the-mystery-of-the-missing-appdumps-directory)
-        - [6.3.4.3. Why `kubectl debug` is used instead of `oc debug`](#6343-why-kubectl-debug-is-used-instead-of-oc-debug)
-        - [6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison](#6344-kubectl-vs-oc-a-quick-comparison)
-      - [6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container](#635-option-e-secure-on-demand-dumps-via-shell-less-ephemeral-container)
-      - [6.3.6. Option F: Deploying with a Hardened Security Context](#636-option-f-deploying-with-a-hardened-security-context)
-      - [6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging](#637-kubectl-debug--important-limitation-pod-instability-after-repeated-debugging)
-      - [6.3.8. baseOS access through nsenter](#638-baseos-access-through-nsenter)
+      - [6.3.1. Option A: Automatic Crash Dumps](#631-option-a-automatic-crash-dumps)
+      - [6.3.2. Option B: On-Demand Sidecar via Deployment Patching](#632-option-b-on-demand-sidecar-via-deployment-patching)
+      - [6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#633-option-c-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
+        - [6.3.3.1. Example Commands](#6331-example-commands)
+        - [6.3.3.2. Understanding Ephemeral Container Filesystem Access](#6332-understanding-ephemeral-container-filesystem-access)
+        - [6.3.3.3. Why `kubectl debug` instead of `oc debug`](#6333-why-kubectl-debug-instead-of-oc-debug)
+      - [6.3.4. Option D: Secure On-Demand Dumps via Shell-less Ephemeral Container](#634-option-d-secure-on-demand-dumps-via-shell-less-ephemeral-container)
+      - [6.3.5. Option E: Deploying with a Hardened Security Context](#635-option-e-deploying-with-a-hardened-security-context)
+      - [6.3.6. kubectl debug Important Limitation: Pod Instability After Repeated Debugging](#636-kubectl-debug-important-limitation-pod-instability-after-repeated-debugging)
+      - [6.3.7. baseOS access through nsenter](#637-baseos-access-through-nsenter)
     - [6.4. Limits & LimitaRanges](#64-limits--limitaranges)
+    - [6.5. Testing and Validation](#65-testing-and-validation)
+      - [6.5.1. Health Check Validation](#651-health-check-validation)
+      - [6.5.2. Security Posture Validation](#652-security-posture-validation)
+      - [6.5.3. Memory Leak Simulation Test](#653-memory-leak-simulation-test)
+      - [6.5.4. Network Policy Testing](#654-network-policy-testing)
   - [7. Security & Troubleshooting Considerations](#7-security--troubleshooting-considerations)
+    - [7.0. Security Features Implemented](#70-security-features-implemented)
+      - [7.0.1. Container Security](#701-container-security)
+      - [7.0.2. Kubernetes Security](#702-kubernetes-security)
+      - [7.0.3. Operational Security](#703-operational-security)
+      - [7.0.4. Security Context Rationale](#704-security-context-rationale)
     - [7.1. Pod Security](#71-pod-security)
     - [7.2. SYS_PTRACE Capability](#72-sys_ptrace-capability)
     - [7.3. seccompProfile](#73-seccompprofile)
     - [7.4. TMPDIR and IPC Issues](#74-tmpdir-and-ipc-issues)
     - [7.5. Resource Limits and OOM Killer Race Conditions](#75-resource-limits-and-oom-killer-race-conditions)
+    - [7.6. Operational Procedures](#76-operational-procedures)
+      - [7.6.1. Deployment Verification Checklist](#761-deployment-verification-checklist)
+      - [7.6.2. Debugging Workflow](#762-debugging-workflow)
+      - [7.6.3. Security Incident Response](#763-security-incident-response)
+      - [7.6.4. Maintenance Procedures](#764-maintenance-procedures)
   - [8. External References & Further Reading](#8-external-references--further-reading)
   - [9. Contributing](#9-contributing)
   - [10. License](#10-license)
@@ -47,8 +60,10 @@ This repository does contains a `.NET` web service specifically engineered to **
 
 * **Controlled Memory Leak Simulation**: Provides an endpoint to trigger a continuous memory allocation pattern.
 * **Automated Crash Dump Generation**: Configured to automatically create `.NET` crash dumps (`ELF` format) when the application experiences an OOM or other critical failures.
-* **On-Demand Diagnostic Tooling**: Integrates `.NET` CLI diagnostic tools (`dotnet-dump`, `dotnet-trace`, `dotnet-counters`, `dotnet-gcdump`) directly into the application image and/or a dedicated sidecar container for live analysis.
-* **Containerized Environment Focus**: Demonstrates best practices for deploying `.NET` applications in OpenShift/MicroShift, including security configurations, resource management via LimitRanges, and ServiceAccount/SCC usage.
+* **On-Demand Diagnostic Tooling**: Integrates `.NET` CLI diagnostic tools (`dotnet-dump`, `dotnet-trace`, `dotnet-counters`, `dotnet-gcdump`) via dedicated debug containers for live analysis.
+* **Security-Hardened Deployment**: Demonstrates production-ready security practices including non-root containers, read-only filesystems, network policies, and minimal RBAC.
+* **Red Hat UBI RHEL9 Compliant**: Uses exclusively Red Hat Universal Base Images (UBI) RHEL9 for .NET 8.0 applications, ensuring enterprise support and security compliance.
+* **MicroShift Optimized**: Specifically designed for single-node MicroShift deployments with appropriate resource limits and storage configurations.
 * **Air-Gapped Deployment Support**: Includes instructions and examples for deploying in environments without direct internet access to container registries.
 
 ## 3. Motivation
@@ -68,27 +83,31 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`Program.cs`**: Main application entry point with ASP.NET Core web API endpoints
   - `/triggerMemoryLeak`: Endpoint to initiate controlled memory allocation
   - `/readme`: Endpoint to render this README as a web page
+  - `/crash`: Endpoint to simulate a fatal application crash and trigger a coredump
 - **`MemoryLeakManager.cs`**: Static class managing memory allocation and tracking
 - **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
 
 ### Container Configuration
-- **`Containerfile`**: Multi-stage container build with embedded .NET diagnostic tools
-- **`Containerfile-debug`**: Specialized debug container for secure dump collection
-- **`configure_core_dump.sh`**: Shell script for core dump configuration
+- **`Containerfile`**: Multi-stage container build using Red Hat UBI RHEL9 .NET 8.0 images (production runtime-only, no debug tools)
+- **`Containerfile-debug`**: Specialized debug container using Red Hat UBI RHEL9 .NET 8.0 SDK for secure dump collection
+- **`configure_core_dump.sh`**: Shell script for core dump configuration (deprecated for container use)
 
 ### Kubernetes Deployment Manifests (`kubernetes/` directory)
-- **`deployment.yaml`**: Standard deployment configuration
-- **`deployment-secure.yaml`**: Hardened security deployment variant
+- **`deployment.yaml`**: Security-hardened production deployment configuration
+- **`deployment-secure.yaml`**: Additional hardened security deployment variant
 - **`kustomization.yaml`**: Kustomize configuration for resource management
 - **`ns.yaml`**: Namespace definition
 - **`serviceaccount.yaml`**: Service account configuration
-- **`rbac.yaml`**: Role-based access control definitions
+- **`rbac.yaml`**: Minimal namespace-scoped RBAC definitions
+- **`networkpolicy.yaml`**: Network isolation policy for ingress/egress control
 - **`scc-and-rbac-secure.yaml`**: Security context constraints for hardened deployment
 - **`svc.yaml`**: Service definition
 - **`route.yaml`**: OpenShift route configuration
 - **`pvc.yaml`**: Persistent volume claim for dump storage
 - **`limitrange.yaml`**: Resource limits and constraints
 - **`patch/`**: JSON patch files for dynamic sidecar injection
+- **`argocd-application.yaml`**: ArgoCD Application manifest for GitOps deployment
+- **`argocd-application-acm.yaml`**: ArgoCD Application manifest with Red Hat ACM integration
 
 ### Diagnostic Tools
 - **`tools/pid-finder/main.go`**: Go utility for automated process discovery and dump collection
@@ -109,7 +128,13 @@ Before proceeding, ensure you have:
 * **MicroShift** installed and running, or access to an OpenShift cluster.
 * `kubectl` or `oc` CLI configured and connected to your cluster.
 * A container registry (e.g., Quay.io, or local Podman storage) available for pushing images.
-* **Cluster Administrator Privileges (Potentially Required)**: Depending on your cluster's security policies, you might need administrator assistance to modify Pod Security Enforcement levels or bind your ServiceAccount to a more permissive `SecurityContextConstraints` (SCC) like `privileged`, especially if you intend to use interactive debugging tools.
+* **Storage**: Ensure your cluster has a default StorageClass (e.g., topolvm for MicroShift) for PVC creation.
+* **Network Policies**: If your cluster enforces NetworkPolicies, ensure the provided policy is compatible with your CNI.
+
+**MicroShift Specific Notes:**
+* MicroShift uses topolvm as the default storage provisioner
+* Routes are available by default; NodePort is an alternative if Routes are disabled
+* Ephemeral containers require Kubernetes 1.25+ (check with `kubectl version`)
 
 ### 5.2. Building & Pushing the Container Image
 
@@ -211,90 +236,99 @@ fail: Program[0]
 ### 6.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 6.3.1. Option A: On-Demand Dumps via Tools Embedded in Application Image (UNSECURE)
+#### 6.3.1. Option A: Automatic Crash Dumps
 
-This method involves bundling the .NET diagnostic tools directly into the main application's container image. This allows an operator to execute dotnet-dump and other tools from a shell within the running application container itself.
+This is the most reliable method for capturing the application's state during a crash. The application can be configured in two primary ways: writing dumps directly to a standard PVC (recommended for most cloud-native scenarios) or leveraging the host node's kernel to write to a `hostPath` volume (useful for deep kernel-level diagnostics).
 
-Configuration:
+##### **Method 1: .NET Runtime Dumps to a CSI-backed PVC (Recommended)**
 
-Your `Containerfile` or `Dockerfile` must be adapted to install the .NET diagnostic tools alongside your application code. This is typically done by installing them as global tools.
+This approach uses the .NET runtime's built-in dump generation feature to write a crash dump directly to a `PersistentVolumeClaim` (PVC). This is the most portable and cloud-native method, as it works with any CSI-compliant storage provider and does not depend on the underlying node's configuration.
 
-Example Containerfile layer:
+**Configuration (`deployment.yaml`):**
+- `DOTNET_DbgEnableMiniDump=1`: Enables crash dump generation.
+- `DOTNET_DbgMiniDumpType=2`: Specifies a "full dump with heap".
+- `DOTNET_DbgMiniDumpName=/dumps/core.%e.%p.%t.dmp`: Sets the output path.
+- The `/dumps` directory is backed by the `dotnet-memory-leak-dumps` PVC, which is provisioned by a CSI storage class (e.g., `topolvm-provisioner`).
 
-~~~
-# Install .NET diagnostic tools
-RUN dotnet tool install --global dotnet-dump --version 8.*
-RUN dotnet tool install --global dotnet-trace --version 8.*
-RUN dotnet tool install --global dotnet-counters --version 8.*
+**Workflow & Sample Output:**
 
-# Add the tools to the PATH
-ENV PATH="${PATH}:/root/.dotnet/tools"
-~~~
+1.  **Deploy and Verify:** Apply the manifests and ensure the PVC is bound and the pod is running.
+    ~~~bash
+    oc apply -k kubernetes/
+    oc get pvc dotnet-memory-leak-dumps
+    # NAME                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS          AGE
+    # dotnet-memory-leak-dumps   Bound    pvc-12b72273-bb68-49a1-94ff-71174412eb32   5Gi        RWO            topolvm-provisioner   14s
+    ~~~
 
-Our `Containerfile` in this repository does already include that changes. To make this workflow simpler, we are using the same image in all options here by now.
+2.  **Trigger the crash:** Send a GET request to the `/crash` endpoint of the main application route.
+    ~~~bash
+    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+    curl http://$ROUTE_HOST/crash
+    ~~~
 
-**Workflow:**
+3.  **Observe Logs:** The previous pod's logs will show the `[createdump]` output from the .NET runtime.
+    ~~~bash
+    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+    oc logs $POD_NAME --previous -c dotnet-app
+    # ...
+    # Process terminated. Simulating a fatal application error for coredump generation.
+    # [createdump] Writing minidump with heap to file /dumps/core.dotnet.1.1762445373.dmp
+    # [createdump] Written 133115904 bytes (32499 pages) to core file
+    # ...
+    ~~~
 
-- Gain shell access to the running application container.
-- Identify the application's process ID (PID).
-- Execute dotnet-dump to collect the dump and save it to the shared volume.
+4.  **Verify Dump File:** After the pod restarts, `rsh` into the new instance and verify the dump file exists in the `/dumps` PVC mount.
+    ~~~bash
+    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+    oc rsh $POD_NAME -c dotnet-app
+    sh-4.4$ ls -lh /dumps/
+    # -rw-------. 1 1000 1000 128M Nov  6 16:09 /dumps/core.dotnet.1.1762445373.dmp
+    ~~~
 
-Example Commands:
+5.  **Extract the Dump File:** Copy the dump file from the pod's persistent volume to your local machine for analysis.
+    ~~~bash
+    # Get the name of the dump file (assuming it's the only one)
+    DUMP_FILE=$(oc rsh $POD_NAME -c dotnet-app -- find /dumps -name '*.dmp' -printf "%f")
 
-~~~
-# 1. Get the pod name
-export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
+    # Copy the file to your current directory
+    oc cp "dotnet-memory-leak-app/${POD_NAME}:/dumps/${DUMP_FILE}" "./${DUMP_FILE}" -c dotnet-app
+    # File "./core.dotnet.1.1762445373.dmp" downloaded
+    ~~~
 
-# 2. Access the application container's shell
-# Note: We are targeting the main 'dotnet-app' container
-oc rsh -c dotnet-app "$POD_NAME"
+##### **Method 2: Kernel-Managed Dumps to a HostPath Volume**
 
-# 3. Inside the container, find the main app's PID (usually PID 1)
-ps -ef
+This method relies on the host node's Linux kernel to handle the coredump process. The application is configured to crash, and the kernel writes the dump to a directory on the host node, which is made available via a `hostPath` `PersistentVolume`. This is useful for deep system-level debugging or when you want to offload the dump generation from the .NET runtime. For this to work, the host node must be properly configured as detailed in the Host Configuration Guide.
 
-# 4. Collect a dump of the application (replace <PID> with the actual PID)
-dotnet-dump collect --process-id <PID> -o /app/dumps/app_collected_dump.dmp
+**Configuration (`deployment-host-coredump.yaml`):**
+- `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables the .NET runtime to cooperate with kernel dump generation.
+- `COMPlus_DbgCrashDumpType=4`: Specifies a "full dump with heap".
+- `COMPlus_DbgMiniDumpName=/var/crashdumps/core/host-dump.%e.%p.%t.dmp`: Sets the output path.
+- The `Program.cs` includes code to set `prctl(PR_SET_DUMPABLE, 1)` to signal to the kernel that the process is allowed to be dumped.
+- The `/var/crashdumps/core` directory is backed by a `hostPath` PV, pointing to a directory on the node.
 
-# 5. Exit the container's shell
-exit
-~~~
+**Workflow & Sample Output:**
 
-**Cons of this Approach:**
+1.  **Trigger the crash:** Use `curl` to send a GET request to the `/crash` endpoint of the `host-coredump` route.
+    ~~~bash
+    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route-host-coredump -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+    curl http://$ROUTE_HOST/crash
+    ~~~
 
-- **Larger Image Size:** Including the SDK or diagnostic tools in your final application image increases its size. This goes against the best practice of keeping production images as lean as possible, leading to slower deployment times and higher storage costs.
-- **Increased Attack Surface:** Every tool and library added to your production image is a potential vector for security vulnerabilities. A minimal image with only the necessary runtime and application code is more secure.
-- **Immutable Tooling:** The diagnostic tools are version-locked with the application image. If a new, critical version of dotnet-dump is released, you must rebuild and redeploy the entire application image to update it. Other methods, like sidecars or ephemeral containers, allow for more flexible tool versioning.
-- **Requires a Shell:** This method depends on having a shell (e.g., /bin/sh or /bin/bash) available in the production container, which is often discouraged from a security perspective.
+2.  **Observe Logs and Pod Status:** The pod will terminate and enter a `CrashLoopBackOff` state. The logs will show the `Environment.FailFast` message.
+    ~~~bash
+    oc get pods -l app=dotnet-memory-leak-app-host-coredump
+    # NAME                                                    READY   STATUS             RESTARTS      AGE
+    # dotnet-memory-leak-app-host-coredump-66d48744b5-994g2   0/1     CrashLoopBackOff   2 (28s ago)   10m
+    ~~~
 
-
-#### 6.3.2. Option B: Automatic OOM Dumps
-This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. The **cons** with this approach is an **increased surface of attack**, with the introduction diagnostic tools as mentioned before. 
-
-Configuration:
-
-- The base OCI does include .NET tools, like `dotnet-dump`, embeeded together with the application runtime. 
-- These variables are pre-configured in your deployment.yaml:
-  - COMPlus_DbgEnableElfDumpOnCrash=1: Enables ELF crash dump generation.
-  - COMPlus_DbgCrashDumpType=3: Specifies a "full" dump.
-  - COMPlus_DbgMiniDumpName=/app/dumps/dump.dmp: Sets the output path.
-- The /app/dumps directory is backed by a PersistentVolumeClaim to ensure persistence.
-
-Workflow:
-- Trigger the memory leak.
-- Allow the application to run until it crashes (you'll see restarts in oc get pods).
-- Once the pod crashes and restarts, a dump file named dump.dmp (or similar, like core.<PID>) will be present in the /app/dumps volume.
-
-Example Commands (after application crashes and restarts):
-~~~
-# Get the name of a running pod (it might be a new instance after restart)
-export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-
-# Verify the dump file exists (replace with your actual pod name)
-oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
-
-# Copy the dump file from the pod to your local machine for analysis
-oc cp "$POD_NAME":/app/dumps/dump.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
-~~~
+3.  **Verify Dump File on the Host:** SSH into the MicroShift/OpenShift node and check the `hostPath` directory for the newly created dump file.
+    ~~~bash
+    # On the OpenShift/MicroShift node
+    ls -la /var/crashdumps/core
+    
+    # total 8052
+    # -rw-r--r--. 1 root root 8242049 Nov  6 16:51 'host-dump.dotnet.1.1762444288.dmp'
+    ~~~
 
 Optional: Analyze the dump locally using dotnet-dump
 
@@ -302,7 +336,8 @@ Optional: Analyze the dump locally using dotnet-dump
 dotnet-dump analyze ./crash_dump.dmp
 ~~~
 
-#### 6.3.3. Option C: On-Demand Sidecar via Deployment Patching
+#### 6.3.2. Option B: On-Demand Sidecar via Deployment Patching
+
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
 
@@ -409,7 +444,7 @@ Remove the sidecar. After collecting the dump, patch the deployment again to rem
 oc patch deployment dotnet-memory-leak-app -n dotnet-memory-leak-app --type=json --patch-file remove-sidecar.json
 ~~~
 
-#### 6.3.4. Option D: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
+#### 6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)
 
 This method allows you to dynamically inject a temporary container into an existing pod for on-demand debugging, without permanent changes to the deployment.yaml.
 
@@ -425,7 +460,7 @@ You specify an image for the ephemeral container that contains the necessary dia
 **Cons:**
 - Kubernetes Version Dependent: The kubectl debug `--target` command requires Kubernetes 1.25+ and enabled EphemeralContainers feature gates.
 
-##### 6.3.4.1. Example Commands
+##### 6.3.3.1. Example Commands
 
 ~~~
 # 1. Get the pod name
@@ -511,72 +546,15 @@ sh-4.4$
 ~~~
 
 
-##### 6.3.4.2. The Mystery of the Missing /app/dumps Directory
+##### 6.3.3.2. Understanding Ephemeral Container Filesystem Access
 
-If you were sharing processes, why did this command fail inside your debug container?
+**Important Note**: Ephemeral containers with `--target` share the process namespace but NOT the mount namespace. The debug container cannot see `/app/dumps` directly, but `dotnet-dump` works because it controls the target process, which writes the dump to its own filesystem.
 
-~~~
-bash-4.4$ ls -l /app/dumps
-ls: cannot access '/app/dumps': No such file or directory
-~~~
+##### 6.3.3.3. Why `kubectl debug` instead of `oc debug`
 
-This reveals another critical concept: sharing the process namespace is not the same as sharing the mount namespace (the filesystem).
+For live-process debugging, `kubectl debug --target` is required because it shares the PID namespace with the target container, allowing access to running processes. `oc debug` creates a separate pod and cannot access the original application's processes.
 
-Ephemeral containers injected with `--target` get their own separate set of volumeMounts. They do not inherit the mounts from the target container. That's why your debug container had no knowledge of the `/app/dumps` directory, which is a PVC mount in your original dotnet-app container.
-
-**So How Did the File Get Written?**
-If the debug container couldn't see /app/dumps, how did this command succeed?
-
-~~~
-TMPDIR=/proc/1/root/tmp /app/tools/dotnet-dump collect ... -o /app/dumps/app_collected_dump2.dmp
-~~~
-
-Because dotnet-dump is just a control tool. It attaches to the target process (PID 1) and tells it what to do. The actual work of writing the memory dump to the file is performed by the target dotnet process itself.
-
-Since the dotnet process (PID 1) is running in the original container, it has full access to its own filesystem, including the mounted PVC at `/app/dumps`.
-
-Think of it like this: You used a remote control (dotnet-dump) from your room to tell a robot (dotnet process) in the next room to write a file on a table (/app/dumps) that only exists in its room. 🤖
-
-##### 6.3.4.3. Why `kubectl debug` is used instead of `oc debug`
-
-For live-process debugging, such as collecting a memory dump, the debugging tool must run within the same Process ID (PID) namespace as the target application. This allows the debug tool to see and interact with the application's running processes.
-
-The key difference between the two commands lies in how they achieve this:
-- `kubectl debug` with the --target flag is specifically designed for this purpose. It works by adding a temporary ephemeral container to the existing, running Pod. This new container joins the Pod's existing namespaces, including the PID namespace, giving it direct access to the application's processes.
-- Currently, `oc debug`, in contrast, creates an entirely new and separate Pod by copying the configuration from the original Deployment or DeploymentConfig. While this new pod has a similar environment (volumes, service account), it has its own isolated PID namespace. As a result, it cannot see or interact with the processes running in the original application pod, making it unsuitable for live dump collection.
-
-Therefore, `kubectl debug` is the appropriate conceptual tool for this task, as its function is to attach to a live process, whereas `oc debug` is currently designed for inspecting state by creating a separate, isolated environment.
-
-##### 6.3.4.4. `kubectl` vs. `oc`: A Quick Comparison
-
-While `kubectl` is the standard command-line tool for any Kubernetes cluster, `oc` is the specialized command-line tool for OpenShift clusters (including MicroShift).
-
-The most important thing to know is that **`oc` is a superset of `kubectl`**. This means that any `kubectl` command you know will also work with `oc`. You can simply replace `kubectl` with `oc` and it will function as expected.
-
-For example:
-* `kubectl get pods` is the same as `oc get pods`.
-* `kubectl apply -f my-app.yaml` is the same as `oc apply -f my-app.yaml`.
-
-However, `oc` includes extra, powerful features designed specifically for OpenShift's developer and enterprise-focused workflows.
-
-Here is a summary of the key differences:
-
-| Feature | `kubectl` (Standard Kubernetes) | `oc` (OpenShift) |
-| :--- | :--- | :--- |
-| **Core Functionality** | Manages standard Kubernetes resources (Pods, Deployments, Services, etc.). | **Includes all `kubectl` functionality** and extends it. |
-| **Focus** | A general-purpose tool for cluster administrators and operators. | Adds many features focused on developer productivity and application lifecycle. |
-| **Authentication** | Relies on a pre-configured `kubeconfig` file for cluster access. | Includes a built-in `oc login` command that integrates with OpenShift's OAuth server for easy authentication. |
-| **Project Management**| Manages `Namespaces`. | Manages `Projects`, which are essentially Namespaces with added user permissions and security policies. Provides easy commands like `oc new-project` and `oc project <name>`. |
-| **Application Deployment** | Deploys applications from YAML manifests (`kubectl apply`). | Adds powerful commands like **`oc new-app`** which can build and deploy an application directly from source code (e.g., from a Git repository) or an existing image. |
-| **Builds & Images** | Does not have built-in concepts for building container images. | Natively understands OpenShift-specific resources like **`BuildConfig`** and **`ImageStream`**. It includes commands like `oc start-build` to trigger image builds from source. |
-| **Networking** | Manages `Ingress` resources for external access, which requires a separate ingress controller. | Natively manages **`Route`** resources, which are a simpler, integrated way to expose services to the outside world, often with automated TLS configuration. |
-
-**Summary: When to Use Which?**
-
-* **Use `kubectl` if:** You are writing scripts that need to be portable across any Kubernetes cluster (not just OpenShift) and you are only interacting with standard Kubernetes resources.
-* **Use `oc` if:** You are working with an OpenShift or MicroShift cluster. It provides a much richer, more integrated experience by giving you access to all the advanced features OpenShift builds on top of Kubernetes. **For daily work on OpenShift, `oc` is always the recommended tool.**
-
-#### 6.3.5. Option E: Secure On-Demand Dumps via Shell-less Ephemeral Container
+#### 6.3.4. Option D: Secure On-Demand Dumps via Shell-less Ephemeral Container
 This method enhances Option D by adhering to strict security policies that forbid shells even in debug images. It uses a purpose-built, shell-less debug container with a compiled utility that automates the dump collection process.
 
 **How it works:**
@@ -694,7 +672,7 @@ drwxr-xr-x. 1 root       root              19 Sep 11 16:09 ..
 sh-4.4$
 ~~~
 
-#### 6.3.6. Option F: Deploying with a Hardened Security Context
+#### 6.3.5. Option E: Deploying with a Hardened Security Context
 
 This method demonstrates how to run the application under a highly restrictive, non-root security context. It serves as a best-practice example for production environments where security is paramount. This approach uses a dedicated service account and a custom Security Context Constraint (SCC) to enforce strict security rules from the start.
 
@@ -821,7 +799,7 @@ Session ended, the ephemeral container will not be restarted but may be reattach
 
 
 
-#### 6.3.7. kubectl debug ⚠️ Important Limitation: Pod Instability After Repeated Debugging
+#### 6.3.6. kubectl debug Important Limitation: Pod Instability After Repeated Debugging
 
 When using `kubectl debug` to attach ephemeral containers, be aware that performing this action repeatedly on the **same pod instance** can lead to instability.
 
@@ -852,7 +830,7 @@ Of course. Here is the rest of the `README.md` section, detailing the step-by-st
 
 -----
 
-#### 6.3.8. baseOS access through nsenter
+#### 6.3.7. baseOS access through nsenter
 
 After completing the prerequisites, follow these steps to generate the dump.
 
@@ -1047,7 +1025,115 @@ spec:
 
 By applying a LimitRange to your namespaces, you create a powerful safety net that significantly improves the stability and predictability of your cluster—a necessity for a production-grade, single-node system.
 
+## 6.5. Testing and Validation
+
+### 6.5.1. Health Check Validation
+
+The application includes comprehensive health checks to ensure reliable operation:
+
+```bash
+# Test health endpoints
+export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+
+# Test liveness probe
+curl -f http://$ROUTE_HOST/healthz
+
+# Test readiness probe  
+curl -f http://$ROUTE_HOST/readyz
+
+# Check pod status and probe results
+oc get pods -n dotnet-memory-leak-app -o wide
+oc describe pod <pod-name> -n dotnet-memory-leak-app
+```
+
+### 6.5.2. Security Posture Validation
+
+Verify that security controls are properly applied:
+
+```bash
+# Check pod security context
+oc get pod <pod-name> -n dotnet-memory-leak-app -o yaml | grep -A 20 securityContext
+
+# Verify network policy is applied
+oc get networkpolicy -n dotnet-memory-leak-app
+
+# Check RBAC permissions
+oc auth can-i get pods --as=system:serviceaccount:dotnet-memory-leak-app:dotnet-app-sa -n dotnet-memory-leak-app
+
+# Verify SCC binding
+oc get scc dotnet-scc -o yaml
+```
+
+### 6.5.3. Memory Leak Simulation Test
+
+```bash
+# Trigger memory leak and monitor
+curl http://$ROUTE_HOST/triggerMemoryLeak &
+
+# Monitor memory usage
+oc top pod -n dotnet-memory-leak-app
+
+# Watch for OOM and restart
+oc get pods -n dotnet-memory-leak-app -w
+
+# Check for crash dumps after restart
+oc rsh <pod-name> -n dotnet-memory-leak-app -- ls -la /app/dumps/
+```
+
+### 6.5.4. Network Policy Testing
+
+```bash
+# Test ingress from allowed sources (should work)
+curl -f http://$ROUTE_HOST/healthz
+
+# Test egress restrictions (should be limited to DNS and monitoring)
+oc rsh <pod-name> -n dotnet-memory-leak-app -- nslookup kubernetes.default.svc.cluster.local
+```
+
 ## 7. Security & Troubleshooting Considerations
+
+This application implements production-ready security practices:
+
+### 7.0. Security Features Implemented
+
+This application implements a defense-in-depth security strategy with multiple layers of protection:
+
+#### 7.0.1. Container Security
+* **Red Hat UBI RHEL9 base images**: Uses exclusively Red Hat Universal Base Images for enterprise support and security compliance
+* **Non-root containers**: Application runs as non-root user with OpenShift arbitrary UID support
+* **Read-only root filesystem**: Container filesystem is read-only with writable volumes for dumps and temp files
+* **Minimal capabilities**: All Linux capabilities dropped except those explicitly required
+* **Seccomp profiles**: Runtime default seccomp profile for syscall filtering
+* **No debug tools in production**: Diagnostic tools are only available in separate debug containers
+
+#### 7.0.2. Kubernetes Security
+* **Network isolation**: NetworkPolicy restricts ingress/egress traffic to only necessary communication
+* **Minimal RBAC**: ServiceAccount has only necessary namespace-scoped permissions (no cluster-wide access)
+* **Security Context Constraints**: Custom SCC provides only required SYS_PTRACE capability for debugging
+* **Resource limits**: CPU and memory limits prevent resource exhaustion and node starvation
+
+#### 7.0.3. Operational Security
+* **Health checks**: Liveness, readiness, and startup probes for reliable operation and failure detection
+* **Automount service account token disabled**: Reduces attack surface by not automatically mounting service account tokens
+* **Process namespace isolation**: `shareProcessNamespace: false` prevents process visibility between containers
+* **Unique dump naming**: Crash dumps include timestamps to prevent overwrites and enable tracking
+
+#### 7.0.4. Security Context Rationale
+
+**Why these specific security settings?**
+
+1. **`runAsNonRoot: true`**: Prevents privilege escalation attacks and follows principle of least privilege
+2. **`readOnlyRootFilesystem: true`**: Prevents malicious code from writing to container filesystem, forcing all writes to mounted volumes
+3. **`capabilities.drop: [ALL]`**: Removes all Linux capabilities, then explicitly adds only what's needed (SYS_PTRACE for debugging)
+4. **`seccompProfile: RuntimeDefault`**: Filters system calls to prevent exploitation of dangerous syscalls
+5. **`automountServiceAccountToken: false`**: Reduces attack surface by not automatically providing cluster credentials
+6. **NetworkPolicy**: Implements zero-trust networking by default-deny with explicit allow rules
+
+**Security vs. Functionality Balance:**
+- Debug capabilities are preserved through dedicated debug containers and SCC bindings
+- Production image is minimal and secure by default
+- Diagnostic tools are available on-demand without compromising production security
+
 Deploying and debugging applications in OpenShift/Kubernetes, especially with advanced diagnostic tools, often involves navigating strict security policies.
 
 ### 7.1. Pod Security
@@ -1082,6 +1168,86 @@ Challenge: If your application is actively consuming memory and approaching its 
 Solution:
 Temporarily increase the resources.limits.memory for your application container in deployment.yaml to provide a larger buffer, allowing more time for dump generation.
 Rely on the automatic OOM dumps (Option A), as they are designed to capture the state at the moment of crash.
+
+## 7.6. Operational Procedures
+
+### 7.6.1. Deployment Verification Checklist
+
+Before considering the deployment successful, verify:
+
+- [ ] Pod is running and ready (all probes passing)
+- [ ] Health endpoints respond correctly (`/healthz`, `/readyz`)
+- [ ] NetworkPolicy is applied and traffic is restricted
+- [ ] RBAC permissions are minimal and namespace-scoped only
+- [ ] SCC is bound and provides only necessary capabilities
+- [ ] Resource limits are appropriate for your environment
+- [ ] PVC is bound and accessible for dump storage
+
+### 7.6.2. Debugging Workflow
+
+When debugging is needed:
+
+1. **Assess the situation**: Determine if you need live debugging or can wait for automatic dumps
+2. **Choose the appropriate method**: 
+   - Automatic OOM dumps (Option B) for crash scenarios
+   - Ephemeral containers (Option D/E) for live debugging
+   - Sidecar injection (Option C) for extended debugging sessions
+3. **Apply minimal privileges**: Use the custom SCC that provides only SYS_PTRACE
+4. **Clean up after debugging**: Remove debug containers and restore original deployment
+5. **Delete pod after multiple debug sessions**: Prevent pod instability from accumulated ephemeral containers
+
+### 7.6.3. Security Incident Response
+
+If security concerns arise:
+
+1. **Immediate response**:
+   ```bash
+   # Isolate the pod by scaling down
+   oc scale deployment dotnet-memory-leak-app --replicas=0 -n dotnet-memory-leak-app
+   
+   # Check for unauthorized access
+   oc logs <pod-name> -n dotnet-memory-leak-app --previous
+   ```
+
+2. **Investigation**:
+   ```bash
+   # Preserve crash dumps for analysis
+   oc cp <pod-name>:/app/dumps/ ./dumps-backup/ -n dotnet-memory-leak-app
+   
+   # Check network policy violations
+   oc get events -n dotnet-memory-leak-app --sort-by='.lastTimestamp'
+   ```
+
+3. **Recovery**:
+   ```bash
+   # Restore from clean deployment
+   oc apply -k kubernetes/
+   
+   # Verify security posture
+   oc get pod <pod-name> -n dotnet-memory-leak-app -o yaml | grep -A 10 securityContext
+   ```
+
+### 7.6.4. Maintenance Procedures
+
+**Regular maintenance tasks**:
+
+```bash
+# Clean up old crash dumps (create a CronJob for this)
+oc rsh <pod-name> -n dotnet-memory-leak-app -- find /app/dumps -name "*.dmp" -mtime +7 -delete
+
+# Update image tags for security patches
+oc set image deployment/dotnet-memory-leak-app dotnet-app=quay.io/your-namespace/dotnet-memory-leak-app:v2 -n dotnet-memory-leak-app
+
+# Verify resource usage and adjust limits if needed
+oc top pod -n dotnet-memory-leak-app
+oc describe limitrange dotnet-limitrange -n dotnet-memory-leak-app
+```
+
+**Monitoring and alerting**:
+- Set up alerts for pod restarts (indicates potential OOM)
+- Monitor PVC usage to prevent storage exhaustion
+- Track network policy violations in cluster logs
+- Alert on RBAC permission changes
 
 ## 8. External References & Further Reading
 For a deeper dive into the technologies and concepts explored in this project, refer to the following official documentation and resources:

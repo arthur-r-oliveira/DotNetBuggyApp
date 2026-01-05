@@ -1,0 +1,23 @@
+---
+# Directory setup tasks for dotnet-coredump role
+
+- name: Create coredump directory
+  ansible.builtin.file:
+    path: "{{ coredump_directory }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: directory
+
+- name: Set SELinux context for coredump directory
+  ansible.builtin.command:
+    cmd: "semanage fcontext -a -t container_file_t '{{ coredump_directory }}(/.*)?'"
+  when: selinux_enabled.stat.exists
+  tags: selinux
+
+- name: Apply SELinux context to coredump directory
+  ansible.builtin.command:
+    cmd: "restorecon -R {{ coredump_directory }}"
+  when: selinux_enabled.stat.exists
+  tags: selinux

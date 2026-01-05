@@ -1,31 +1,13 @@
-# Stage 1: Build the Go utility
-FROM registry.access.redhat.com/ubi8/go-toolset:1.21 as builder
-
-USER root
-WORKDIR /build
-
-# Copy the Go source code
-COPY tools/pid-finder/main.go .
-
-# Build the utility as a static executable
-RUN go build -o pid-finder -ldflags "-extldflags -static" main.go
-
-# Stage 2: Create the final debug image
-FROM registry.redhat.io/rhel8/dotnet-80:8.0
+FROM registry.redhat.io/rhel9/support-tools:latest
 
 WORKDIR /app
 
 # Switch to root to perform setup
 USER root
 
-# Copy the compiled Go utility from the builder stage
-COPY --from=builder /build/pid-finder /app/pid-finder
-
+RUN dnf install strace -y
 # Set up permissions and install tools as root
-RUN chown 1001:0 /app && chown 1001:0 /app/pid-finder && chmod +x /app/pid-finder && mkdir -p /app/tools && chown 1001:0 /app/tools && dotnet tool install --tool-path /app/tools dotnet-dump --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-gcdump --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-trace --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-counters --version "8.*"
+RUN chown 1001:0 /app && mkdir -p /app/tools && chown 1001:0 /app/tools && dotnet tool install --tool-path /app/tools dotnet-dump --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-gcdump --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-trace --version "8.*" && dotnet tool install --tool-path /app/tools dotnet-counters --version "8.*"
 
 # Switch back to the non-root user for the final image
-USER 1001
-
-# Set the entrypoint to our new utility
-ENTRYPOINT ["/app/pid-finder"]
+USER 1000

@@ -1,0 +1,51 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: coredump-scc-secure
+  annotations:
+    description: "Secure Security Context Constraint for .NET coredump generation. Minimal privileges with proper SELinux context."
+    kubernetes.io/description: "This SCC allows containers to generate coredumps with minimal security footprint."
+users:
+- system:serviceaccount:dotnet-memory-leak-app:dotnet-app-sa
+- system:serviceaccount:dotnet-memory-leak-app:coredump-sa
+allowHostDirVolumePlugin: true
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - SYS_PTRACE  # Required for coredump generation
+  - CHOWN       # Required for file ownership
+  - SETUID      # Required for process management
+  - SETGID      # Required for process management
+defaultAddCapabilities: []
+fsGroup:
+  type: RunAsAny
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+  - KILL
+  - MKNOD
+  - SYS_ADMIN
+  - SYS_MODULE
+  - SYS_RAWIO
+  - SYS_RESOURCE
+  - SYS_TIME
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+  seLinuxOptions:
+    level: "s0:c0,c1"  # More restrictive than s0:c13,c12
+seccompProfiles:
+- runtime/default  # Use default seccomp profile instead of unconfined
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - persistentVolumeClaim
+  - projected
+  - secret
+  - hostPath

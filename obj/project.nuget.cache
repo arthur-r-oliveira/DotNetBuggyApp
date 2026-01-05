@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "/6VLCuA/FgTjz+ZeKLznZSfRFMojE/LnLzp5NBev6kCtL2seeiofxDMMKm0SPntipVQ7ZqzQmLVkorXyyG2yhQ==",
+  "dgSpecHash": "pM51h5ZUXVs=",
   "success": true,
   "projectFilePath": "/home/arolivei/utils/code/DotNetBuggyApp/DotNetMemoryLeakApp.csproj",
   "expectedPackageFiles": [
@@ -11,7 +11,10 @@
     "/home/arolivei/.nuget/packages/swashbuckle.aspnetcore/6.6.2/swashbuckle.aspnetcore.6.6.2.nupkg.sha512",
     "/home/arolivei/.nuget/packages/swashbuckle.aspnetcore.swagger/6.6.2/swashbuckle.aspnetcore.swagger.6.6.2.nupkg.sha512",
     "/home/arolivei/.nuget/packages/swashbuckle.aspnetcore.swaggergen/6.6.2/swashbuckle.aspnetcore.swaggergen.6.6.2.nupkg.sha512",
-    "/home/arolivei/.nuget/packages/swashbuckle.aspnetcore.swaggerui/6.6.2/swashbuckle.aspnetcore.swaggerui.6.6.2.nupkg.sha512"
+    "/home/arolivei/.nuget/packages/swashbuckle.aspnetcore.swaggerui/6.6.2/swashbuckle.aspnetcore.swaggerui.6.6.2.nupkg.sha512",
+    "/home/arolivei/.nuget/packages/microsoft.netcore.app.ref/8.0.21/microsoft.netcore.app.ref.8.0.21.nupkg.sha512",
+    "/home/arolivei/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.21/microsoft.aspnetcore.app.ref.8.0.21.nupkg.sha512",
+    "/home/arolivei/.nuget/packages/microsoft.netcore.app.host.linux-x64/8.0.21/microsoft.netcore.app.host.linux-x64.8.0.21.nupkg.sha512"
   ],
   "logs": []
 }

@@ -19,16 +19,12 @@ allowedFlexVolumes: null
 allowedUnsafeSysctls: null
 defaultAddCapabilities: []
 fsGroup:
-  type: MustRunAs
-  ranges:
-  - max: 1000
-    min: 1000
+  type: RunAsAny
 readOnlyRootFilesystem: true
 requiredDropCapabilities:
 - ALL
 runAsUser:
-  type: MustRunAs
-  uid: 1000
+  type: RunAsAny
 seLinuxContext:
   type: MustRunAs
 supplementalGroups:

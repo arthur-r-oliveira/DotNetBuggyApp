@@ -1,0 +1,23 @@
+---
+# Main tasks for dotnet-coredump role
+# This role configures host-level settings for .NET coredump capture
+
+- name: Include prerequisites tasks
+  include_tasks: prerequisites.yml
+  tags: prerequisites
+
+- name: Include directory setup tasks
+  include_tasks: directory.yml
+  tags: directory
+
+- name: Include SELinux configuration tasks
+  include_tasks: selinux.yml
+  tags: selinux
+
+- name: Include sysctl configuration tasks
+  include_tasks: sysctl.yml
+  tags: sysctl
+
+- name: Include verification tasks
+  include_tasks: verification.yml
+  tags: verification

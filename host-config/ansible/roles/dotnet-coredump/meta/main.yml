@@ -1,0 +1,22 @@
+---
+# Metadata for dotnet-coredump role
+
+galaxy_info:
+  author: DotNetBuggyApp Team
+  description: Configure host-level settings for .NET coredump capture in MicroShift/OpenShift environments
+  company: Red Hat
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: EL
+      versions:
+        - 8
+        - 9
+  galaxy_tags:
+    - dotnet
+    - coredump
+    - microshift
+    - openshift
+    - security
+
+dependencies: []

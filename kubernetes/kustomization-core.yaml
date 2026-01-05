@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Core resources for basic .NET application deployment
+# This includes only the essential resources that are currently working
+
+resources:
+  # Core namespace and limits
+  - ns.yaml
+  - limitrange.yaml
+  
+  # Service accounts and RBAC
+  - serviceaccount.yaml
+  - rbac.yaml
+  
+  # Storage
+  - pvc.yaml
+  
+  # Services and routes
+  - svc.yaml
+  - route.yaml
+  
+  # Main deployments
+  - deployment.yaml
+  - deployment-secure.yaml
+  
+  # Security Context Constraints
+  - scc-and-rbac-secure.yaml
+  - scc-coredump.yaml
+  - sa-coredump.yaml

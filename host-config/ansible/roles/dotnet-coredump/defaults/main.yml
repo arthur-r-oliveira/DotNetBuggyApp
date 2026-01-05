@@ -1,0 +1,11 @@
+---
+# Default variables for dotnet-coredump role
+
+# Coredump directory path
+coredump_directory: "/var/crashdumps"
+
+# Sysctl configuration file path
+coredump_config_file: "/etc/sysctl.d/99-coredump.conf"
+
+# SELinux context for coredump directory
+coredump_selinux_context: "container_file_t"

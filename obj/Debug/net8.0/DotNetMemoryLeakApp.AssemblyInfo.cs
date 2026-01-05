@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("DotNetMemoryLeakApp")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+382e41b3ead0ef6b09b989ff20e6cbc172bde3ca")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+965d08fd6a83bc9d58d7f0c7cb44c6ba4ef49486")]
 [assembly: System.Reflection.AssemblyProductAttribute("DotNetMemoryLeakApp")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DotNetMemoryLeakApp")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

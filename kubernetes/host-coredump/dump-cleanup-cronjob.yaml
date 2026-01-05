@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: coredump-cleanup-job
+  namespace: dotnet-memory-leak-app
+spec:
+  schedule: "0 2 * * *" # Run daily at 2:00 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup-container
+            image: registry.access.redhat.com/ubi8/ubi-minimal:latest
+            command: ["/bin/sh", "-c"]
+            args:
+            - find /dumps-data -type f -mtime +7 -delete && echo "Cleaned up old coredump files."
+            volumeMounts:
+            - name: dump-storage
+              mountPath: /dumps-data
+          volumes:
+          - name: dump-storage
+            persistentVolumeClaim:
+              claimName: coredump-pvc

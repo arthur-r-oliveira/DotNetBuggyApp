@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-memory-leak-app-coredump-test
+  namespace: dotnet-memory-leak-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dotnet-memory-leak-app-coredump-test
+  template:
+    metadata:
+      labels:
+        app: dotnet-memory-leak-app-coredump-test
+    spec:
+      shareProcessNamespace: false
+      serviceAccountName: coredump-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: dump-storage
+          persistentVolumeClaim:
+            claimName: coredump-pvc
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: host-crashdumps
+          hostPath:
+            path: /var/crashdumps
+            type: DirectoryOrCreate
+      containers:
+        - name: dotnet-app
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: false  # Allow writing for coredumps
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - SYS_PTRACE  # Required for coredump generation
+            seccompProfile:
+              type: RuntimeDefault
+          image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8881
+              name: http
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8881"
+            - name: COMPlus_DbgEnableElfDumpOnCrash
+              value: "1"
+            - name: COMPlus_DbgCrashDumpType
+              value: "3"
+            - name: COMPlus_DbgMiniDumpName
+              value: "/var/crashdumps/dotnet-dump.%e.%p.%t.dmp"
+            - name: TMPDIR
+              value: "/tmp"
+            - name: ULIMIT_CORE
+              value: "unlimited"
+          volumeMounts:
+            - mountPath: /app/dumps
+              name: dump-storage
+            - mountPath: /var/crashdumps
+              name: host-crashdumps
+            - name: tmp-volume
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8881
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8881
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8881
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "128Mi"

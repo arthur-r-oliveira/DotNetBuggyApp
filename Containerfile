@@ -1,18 +1,12 @@
 # Stage 1: Build the application
-FROM registry.redhat.io/rhel8/dotnet-80:8.0 AS build
+FROM registry.access.redhat.com/ubi8/dotnet-80:latest AS build
 
 WORKDIR /app
 
-RUN chown -R 1001:0 /app && \
-    mkdir -p /app/dumps && chmod -R 750 /app/dumps && chown -R 1001:0 /app/dumps # <--- KEEP THIS
-    # REMOVE THIS LINE: && mkdir -p /app/dumps/tmp && chmod -R 750 /app/dumps/tmp && chown -R 1001:0 /app/dumps/tmp
-
-
-# Switch to root to install global .NET tools
+# Switch to root to install global .NET tools for debug image
 USER root
 
-# Explicitly create the directory for global tools before installation
-# Then, install .NET diagnostic tools globally into this directory.
+# Install .NET diagnostic tools for debug scenarios only
 RUN mkdir -p /app/tools && chown -R 1001:0 /app/tools && \
  dotnet tool install --tool-path /app/tools dotnet-trace \
  && dotnet tool install --tool-path /app/tools dotnet-counters \
@@ -20,6 +14,10 @@ RUN mkdir -p /app/tools && chown -R 1001:0 /app/tools && \
  && dotnet tool install --tool-path /app/tools dotnet-gcdump
  
 RUN chown -R 1001:0 /opt/app-root/.local/share/NuGet/
+
+# Ensure /app directory has proper ownership for build
+RUN chown -R 1001:0 /app
+
 # Switch back to non-root user for building the application
 USER 1001
 # --- Build Application ---
@@ -29,24 +27,24 @@ RUN dotnet restore
 COPY . .
 RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o /app/out --no-restore
 
-# Stage 2: Create the final runtime image
-FROM registry.redhat.io/rhel8/dotnet-80:8.0 AS final
+# Stage 2: Create the final runtime image (production - no debug tools)
+FROM registry.access.redhat.com/ubi8/dotnet-80-runtime:latest AS final
 
 WORKDIR /app
 
+# Copy only the application binaries and README
 COPY --from=build /app/out .
 COPY --from=build /app/README.md .
-COPY --from=build /app/tools /app/tools
 
+# Create dumps directory with proper permissions for OpenShift arbitrary UID
 USER root
 RUN mkdir -p /app/dumps && \
-    chown -R 1001:0 /app/dumps && \
+    chgrp -R 0 /app && \
+    chmod -R g+rwX /app && \
     chmod -R 750 /app/dumps
 
+# Switch to non-root user (OpenShift will override with arbitrary UID)
 USER 1001
-
-# Add the directory containing the tool executables to the PATH
-ENV PATH="/app/tools:${PATH}"
 
 # --- Environment Variables for Crash Dumps ---
 ENV COMPlus_DbgEnableElfDumpOnCrash=1

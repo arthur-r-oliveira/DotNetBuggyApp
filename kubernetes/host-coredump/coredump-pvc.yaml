@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: coredump-pvc
+  namespace: dotnet-memory-leak-app # Set your target namespace
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi # Must match or be less than the PV size
+  storageClassName: standard # Must match the PV
+  volumeName: coredump-hostpath-pv

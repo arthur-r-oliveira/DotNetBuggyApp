@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dotnet-memory-leak-app
+  name: dotnet-memory-leak-app-host-coredump
   namespace: dotnet-memory-leak-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dotnet-memory-leak-app
+      app: dotnet-memory-leak-app-host-coredump
   template:
     metadata:
       labels:
-        app: dotnet-memory-leak-app
+        app: dotnet-memory-leak-app-host-coredump
     spec:
       shareProcessNamespace: false
       serviceAccountName: dotnet-app-sa
@@ -20,39 +20,46 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-        fsGroup: 1000
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
-            claimName: dotnet-memory-leak-dumps
+            claimName: coredump-pvc
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi
       containers:
         - name: dotnet-app
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop:
                 - ALL
-            runAsUser: 1000
-            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1-base
           imagePullPolicy: IfNotPresent
+          # No command/args needed - the image has ENTRYPOINT set
           ports:
             - containerPort: 8881
               name: http
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8881"
-            - name: DOTNET_DbgEnableMiniDump
+            - name: COMPlus_DbgEnableElfDumpOnCrash
               value: "1"
-            - name: DOTNET_DbgMiniDumpType
-              value: "2"
-            - name: DOTNET_DbgMiniDumpName
-              value: "/dumps/core.%e.%p.%t.dmp"
+            - name: COMPlus_DbgCrashDumpType
+              value: "4"
+            - name: COMPlus_DbgMiniDumpName
+              value: "/var/crashdumps/core/host-dump.%e.%p.%t.dmp"
+            - name: TMPDIR
+              value: "/tmp"
           volumeMounts:
-            - mountPath: /dumps
+            - mountPath: /var/crashdumps/core
               name: dump-storage
+            - name: tmp-volume
+              mountPath: /tmp
           resources:
             requests:
               cpu: "500m"

@@ -20,13 +20,11 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+        fsGroup: 1000
       volumes:
         - name: dump-storage
           persistentVolumeClaim:
-            claimName: coredump-pvc
-        - name: tmp-volume
-          emptyDir:
-            sizeLimit: 1Gi
+            claimName: dotnet-memory-leak-dumps
       containers:
         - name: dotnet-app
           securityContext:
@@ -36,32 +34,25 @@ spec:
             capabilities:
               drop:
                 - ALL
-            seccompProfile:
-              type: RuntimeDefault
+            runAsUser: 1000
+            runAsGroup: 1000
           image: quay.io/rhn_support_arolivei/dotnet-memory-leak-app:v1-base
           imagePullPolicy: IfNotPresent
-          command: ["/bin/sh", "-c"]
-          args:
-            - mkdir -p /app/dumps/tmp && chmod 777 /app/dumps/tmp && exec dotnet /app/DotNetMemoryLeakApp.dll
           ports:
             - containerPort: 8881
               name: http
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8881"
-            - name: COMPlus_DbgEnableElfDumpOnCrash
+            - name: DOTNET_DbgEnableMiniDump
               value: "1"
-            - name: COMPlus_DbgCrashDumpType
-              value: "4"
-            - name: COMPlus_DbgMiniDumpName
-              value: "/app/dumps/core/host-dump.%e.%p.%t.dmp"
-            - name: TMPDIR
-              value: "/tmp"
+            - name: DOTNET_DbgMiniDumpType
+              value: "2"
+            - name: DOTNET_DbgMiniDumpName
+              value: "/dumps/core.%e.%p.%t.dmp"
           volumeMounts:
-            - mountPath: /app/dumps
+            - mountPath: /dumps
               name: dump-storage
-            - name: tmp-volume
-              mountPath: /tmp
           resources:
             requests:
               cpu: "500m"

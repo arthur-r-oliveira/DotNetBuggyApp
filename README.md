@@ -15,7 +15,7 @@
     - [6.1. Triggering a Memory Leak](#61-triggering-a-memory-leak)
     - [6.2. Monitoring Application Logs](#62-monitoring-application-logs)
     - [6.3. Collecting Crash Dumps](#63-collecting-crash-dumps)
-      - [6.3.1. Option A: Automatic OOM Dumps (Recommended)](#631-option-a-automatic-oom-dumps-recommended)
+      - [6.3.1. Option A: Automatic Crash Dumps](#631-option-a-automatic-crash-dumps)
       - [6.3.2. Option B: On-Demand Sidecar via Deployment Patching](#632-option-b-on-demand-sidecar-via-deployment-patching)
       - [6.3.3. Option C: On-Demand Dumps via Ephemeral Debug Container (kubectl debug)](#633-option-c-on-demand-dumps-via-ephemeral-debug-container-kubectl-debug)
         - [6.3.3.1. Example Commands](#6331-example-commands)
@@ -336,6 +336,7 @@ dotnet-dump analyze ./crash_dump.dmp
 ~~~
 
 #### 6.3.2. Option B: On-Demand Sidecar via Deployment Patching
+
 This method allows for interactive, real-time dump collection by running .NET diagnostic tools from a dedicated sidecar container within the same pod.
 It uses oc patch to temporarily modify the Deployment resource, which performs a controlled rollout of a new pod containing the application and a debug sidec
 

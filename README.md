@@ -83,31 +83,45 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`Program.cs`**: Main application entry point with ASP.NET Core web API endpoints
   - `/triggerMemoryLeak`: Endpoint to initiate controlled memory allocation
   - `/readme`: Endpoint to render this README as a web page
-  - `/crash`: Endpoint to simulate a fatal application crash and trigger a coredump
+  - `/crash`: Endpoint to trigger a segmentation fault for coredump testing
+  - `/healthz`: Liveness health check endpoint (returns HTTP 200 OK when healthy)
+  - `/readyz`: Readiness health check endpoint (returns HTTP 200 OK when ready)
+  - `/swagger`: Swagger UI documentation (available in development mode)
 - **`MemoryLeakManager.cs`**: Static class managing memory allocation and tracking
 - **`DotNetMemoryLeakApp.csproj`**: .NET 8.0 project configuration with diagnostic tooling dependencies
 
 ### Container Configuration
-- **`Containerfile`**: Multi-stage container build using Red Hat UBI RHEL9 .NET 8.0 images (production runtime-only, no debug tools)
-- **`Containerfile-debug`**: Specialized debug container using Red Hat UBI RHEL9 .NET 8.0 SDK for secure dump collection
+- **`Containerfile`**: Multi-stage container build using Red Hat UBI RHEL8 .NET 8.0 images (production runtime-only, no debug tools)
+  - **Use case**: Standard production deployments with automatic OOM dump generation
+  - **Image tag**: `v1-base`
+- **`Containerfile-debug`**: Specialized debug container using Red Hat UBI RHEL8 .NET 8.0 SDK for secure dump collection
+  - **Use case**: On-demand debugging with .NET diagnostic tools (dotnet-dump, dotnet-trace, etc.)
+  - **Image tag**: `v1-debug`
+- **`Containerfile-debug-shellless`**: Shell-less debug container with automated dump collection using Go utility
+  - **Use case**: Secure debugging in environments that forbid interactive shells
+  - **Image tag**: `v1-debug-shellless`
+- **`Containerfile.hardened`**: Hardened production container with enhanced security configurations
+  - **Use case**: Deployments requiring maximum security posture
+  - **Image tag**: `v1-hardened`
 - **`configure_core_dump.sh`**: Shell script for core dump configuration (deprecated for container use)
 
 ### Kubernetes Deployment Manifests (`kubernetes/` directory)
 - **`deployment.yaml`**: Security-hardened production deployment configuration
 - **`deployment-secure.yaml`**: Additional hardened security deployment variant
 - **`kustomization.yaml`**: Kustomize configuration for resource management
-- **`ns.yaml`**: Namespace definition
+- **`ns.yaml`**: Namespace definition (`dotnet-memory-leak-app`)
 - **`serviceaccount.yaml`**: Service account configuration
 - **`rbac.yaml`**: Minimal namespace-scoped RBAC definitions
 - **`networkpolicy.yaml`**: Network isolation policy for ingress/egress control
 - **`scc-and-rbac-secure.yaml`**: Security context constraints for hardened deployment
 - **`svc.yaml`**: Service definition
 - **`route.yaml`**: OpenShift route configuration
-- **`pvc.yaml`**: Persistent volume claim for dump storage
+- **`pvc.yaml`**: Persistent volume claim for dump storage (PVC name: `coredump-pvc`)
 - **`limitrange.yaml`**: Resource limits and constraints
 - **`patch/`**: JSON patch files for dynamic sidecar injection
 - **`argocd-application.yaml`**: ArgoCD Application manifest for GitOps deployment
 - **`argocd-application-acm.yaml`**: ArgoCD Application manifest with Red Hat ACM integration
+- **`host-coredump/`**: Host-level coredump collection manifests (PV, PVC, CronJob)
 
 ### Diagnostic Tools
 - **`tools/pid-finder/main.go`**: Go utility for automated process discovery and dump collection
@@ -144,9 +158,9 @@ In an **internet-connected environment**, build and push the container image to 
 # Navigate to the project root directory
 cd DotNetBuggyApp-main
 
-# Build the image using the optimized Containerfile-new.dockerfile
-# (Ensure your Containerfile-new.dockerfile includes the necessary tool installations and TMPDIR setup as discussed)
-podman build -t quay.io/your-namespace/dotnet-memory-leak-app:v1 -f Containerfile-new.dockerfile .
+# Build the image using the optimized Containerfile.hardened
+# (Ensure your Containerfile.hardened includes the necessary tool installations and TMPDIR setup as discussed)
+podman build -t quay.io/your-namespace/dotnet-memory-leak-app:v1 -f Containerfile.hardened .
 
 # Push the image to your container registry
 podman push quay.io/your-namespace/dotnet-memory-leak-app:v1
@@ -178,10 +192,19 @@ sudo podman images # Confirm the image is available
 
 Apply the Kubernetes manifests using kustomize. This will create the namespace, service account, roles, PVC, deployment, service, and route.
 
+**IMPORTANT NOTE:** The kustomization.yaml is configured to deploy **multiple deployment variants** for comparison and testing purposes:
+- `deployment.yaml`: Standard deployment with basic security
+- `deployment-secure.yaml`: Hardened deployment with enhanced security context
+- `deployment-host-coredump.yaml`: Deployment with host-level coredump collection
+
+If you only want to deploy a single variant, either modify `kustomization.yaml` or apply individual manifests directly with `oc apply -f deployment.yaml`.
+
 ~~~
 oc apply -k .
 Expected Output (May vary, note warnings):
 You might see warnings about PodSecurity policies (e.g., "would violate PodSecurity "restricted:latest"") if your cluster has strict default policies. These warnings indicate that certain requested capabilities (like SYS_PTRACE) or security contexts might be blocked. Despite warnings, the core objects should be created.
+
+**Note:** The actual PVC name and resource names depend on your manifest configuration. The standard configuration uses `coredump-pvc` for the PersistentVolumeClaim.
 
 namespace/dotnet-memory-leak-app created
 serviceaccount/dotnet-app-sa created
@@ -191,7 +214,7 @@ rolebinding.rbac.authorization.k8s.io/dotnet-app-rolebinding created
 clusterrolebinding.rbac.authorization.k8s.io/dotnet-app-clusterrolebinding created
 service/dotnet-memory-leak-service created
 limitrange/dotnet-limitrange created
-persistentvolumeclaim/dotnet-memory-leak-dumps created
+persistentvolumeclaim/coredump-pvc created
 Warning: would violate PodSecurity "restricted:latest": unrestricted capabilities (container "diagnostic-tools-sidecar" must set securityContext.capabilities.drop=["ALL"]; container "diagnostic-tools-sidecar" must not include "SYS_PTRACE" in securityContext.capabilities.add)
 deployment.apps/dotnet-memory-leak-app created
 route.route.openshift.io/dotnet-memory-leak-route created
@@ -200,6 +223,27 @@ securitycontextconstraints.security.openshift.io/dotnet-scc created
 
 ## 6. Usage & Diagnostic Workflow
 This section outlines how to use the application and leverage its diagnostic capabilities.
+
+### 6.0. API Documentation (Swagger UI)
+
+The application includes Swagger/OpenAPI documentation for interactive API exploration. This is **only available when running in Development mode**.
+
+**Accessing Swagger UI:**
+~~~
+# Get the route hostname
+export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
+
+# Access Swagger UI in your browser (only works if ASPNETCORE_ENVIRONMENT=Development)
+http://$ROUTE_HOST/swagger
+~~~
+
+**Note:** For production deployments, Swagger is disabled for security reasons. Use the endpoints directly:
+- `GET /`: Basic health check - returns "DotNet Memory Leak App is running!"
+- `GET /healthz`: Liveness probe - returns HTTP 200 OK with "Healthy" status
+- `GET /readyz`: Readiness probe - returns HTTP 200 OK with "Healthy" status
+- `GET /triggerMemoryLeak`: Initiates memory leak simulation
+- `GET /crash`: Triggers segmentation fault for testing coredump capture
+- `GET /readme`: Renders this README as HTML
 
 ### 6.1. Triggering a Memory Leak
 To initiate the memory leak, access the /triggerMemoryLeak endpoint of your deployed application via its OpenShift Route.
@@ -236,99 +280,54 @@ fail: Program[0]
 ### 6.3. Collecting Crash Dumps
 The project offers multiple strategies for collecting crash dumps, suitable for different debugging scenarios and cluster security postures.
 
-#### 6.3.1. Option A: Automatic Crash Dumps
+#### 6.3.1. Option A: Automatic OOM Dumps (Recommended)
+This is the primary and most reliable method for capturing the application's state during an OutOfMemory crash, especially in strict security environments. The .NET runtime automatically generates a full dump when the application crashes due to an unhandled exception. 
 
-This is the most reliable method for capturing the application's state during a crash. The application can be configured in two primary ways: writing dumps directly to a standard PVC (recommended for most cloud-native scenarios) or leveraging the host node's kernel to write to a `hostPath` volume (useful for deep kernel-level diagnostics).
+**Enhanced Features:**
+- **Timestamped dump files**: Dump files include process ID and timestamp for better tracking
+- **Programmatic coredump configuration**: The application automatically configures `prctl` and `ulimit` settings
+- **Host-level coredump support**: Optional host-level coredump collection via PersistentVolumes
+- **Automated cleanup**: CronJob for cleaning up old dump files
 
-##### **Method 1: .NET Runtime Dumps to a CSI-backed PVC (Recommended)**
+Configuration:
+- These variables are pre-configured in your deployment.yaml:
+  - `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables ELF crash dump generation
+  - `COMPlus_DbgCrashDumpType=4`: Specifies a "full" dump (type 4 includes heap)
+  - `COMPlus_DbgMiniDumpName=/app/dumps/core/host-dump.%e.%p.%t.dmp`: Sets timestamped output path
+    - `%e` = executable name
+    - `%p` = process ID
+    - `%t` = timestamp
+- The `/app/dumps` directory is backed by a PersistentVolumeClaim (`coredump-pvc`) to ensure persistence
+- **Programmatic setup**: The application automatically creates the dumps directory and configures coredump settings via `prctl` system calls
 
-This approach uses the .NET runtime's built-in dump generation feature to write a crash dump directly to a `PersistentVolumeClaim` (PVC). This is the most portable and cloud-native method, as it works with any CSI-compliant storage provider and does not depend on the underlying node's configuration.
+**Note:** The base `Containerfile` sets a simpler pattern (`/app/dumps/dump.dmp`), but the deployment.yaml overrides this with the timestamped pattern above. Always check your deployment configuration for the actual dump naming convention in use.
 
-**Configuration (`deployment.yaml`):**
-- `DOTNET_DbgEnableMiniDump=1`: Enables crash dump generation.
-- `DOTNET_DbgMiniDumpType=2`: Specifies a "full dump with heap".
-- `DOTNET_DbgMiniDumpName=/dumps/core.%e.%p.%t.dmp`: Sets the output path.
-- The `/dumps` directory is backed by the `dotnet-memory-leak-dumps` PVC, which is provisioned by a CSI storage class (e.g., `topolvm-provisioner`).
+Workflow:
+- Trigger the memory leak
+- Allow the application to run until it crashes (you'll see restarts in `oc get pods`)
+- Once the pod crashes and restarts, a dump file with timestamp will be present in the `/app/dumps` volume
 
-**Workflow & Sample Output:**
+Example Commands (after application crashes and restarts):
+~~~
+# Get the name of a running pod (it might be a new instance after restart)
+export POD_NAME=$(oc get pods -n dotnet-memory-leak-app -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
 
-1.  **Deploy and Verify:** Apply the manifests and ensure the PVC is bound and the pod is running.
-    ~~~bash
-    oc apply -k kubernetes/
-    oc get pvc dotnet-memory-leak-dumps
-    # NAME                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS          AGE
-    # dotnet-memory-leak-dumps   Bound    pvc-12b72273-bb68-49a1-94ff-71174412eb32   5Gi        RWO            topolvm-provisioner   14s
-    ~~~
+# Verify the dump file exists (look for timestamped files)
+oc rsh "$POD_NAME" -c dotnet-app -- ls -l /app/dumps/
 
-2.  **Trigger the crash:** Send a GET request to the `/crash` endpoint of the main application route.
-    ~~~bash
-    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
-    curl http://$ROUTE_HOST/crash
-    ~~~
+# Copy the dump file from the pod to your local machine for analysis
+oc cp "$POD_NAME":/app/dumps/dump.*.dmp ./crash_dump.dmp -n dotnet-memory-leak-app
+~~~
 
-3.  **Observe Logs:** The previous pod's logs will show the `[createdump]` output from the .NET runtime.
-    ~~~bash
-    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-    oc logs $POD_NAME --previous -c dotnet-app
-    # ...
-    # Process terminated. Simulating a fatal application error for coredump generation.
-    # [createdump] Writing minidump with heap to file /dumps/core.dotnet.1.1762445373.dmp
-    # [createdump] Written 133115904 bytes (32499 pages) to core file
-    # ...
-    ~~~
+**Host-Level Coredump Collection (Optional):**
+For enhanced security and host-level dump collection:
+~~~
+# Deploy host-level coredump configuration
+oc apply -f kubernetes/host-coredump/
 
-4.  **Verify Dump File:** After the pod restarts, `rsh` into the new instance and verify the dump file exists in the `/dumps` PVC mount.
-    ~~~bash
-    export POD_NAME=$(oc get pods -l app=dotnet-memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-    oc rsh $POD_NAME -c dotnet-app
-    sh-4.4$ ls -lh /dumps/
-    # -rw-------. 1 1000 1000 128M Nov  6 16:09 /dumps/core.dotnet.1.1762445373.dmp
-    ~~~
-
-5.  **Extract the Dump File:** Copy the dump file from the pod's persistent volume to your local machine for analysis.
-    ~~~bash
-    # Get the name of the dump file (assuming it's the only one)
-    DUMP_FILE=$(oc rsh $POD_NAME -c dotnet-app -- find /dumps -name '*.dmp' -printf "%f")
-
-    # Copy the file to your current directory
-    oc cp "dotnet-memory-leak-app/${POD_NAME}:/dumps/${DUMP_FILE}" "./${DUMP_FILE}" -c dotnet-app
-    # File "./core.dotnet.1.1762445373.dmp" downloaded
-    ~~~
-
-##### **Method 2: Kernel-Managed Dumps to a HostPath Volume**
-
-This method relies on the host node's Linux kernel to handle the coredump process. The application is configured to crash, and the kernel writes the dump to a directory on the host node, which is made available via a `hostPath` `PersistentVolume`. This is useful for deep system-level debugging or when you want to offload the dump generation from the .NET runtime. For this to work, the host node must be properly configured as detailed in the Host Configuration Guide.
-
-**Configuration (`deployment-host-coredump.yaml`):**
-- `COMPlus_DbgEnableElfDumpOnCrash=1`: Enables the .NET runtime to cooperate with kernel dump generation.
-- `COMPlus_DbgCrashDumpType=4`: Specifies a "full dump with heap".
-- `COMPlus_DbgMiniDumpName=/var/crashdumps/core/host-dump.%e.%p.%t.dmp`: Sets the output path.
-- The `Program.cs` includes code to set `prctl(PR_SET_DUMPABLE, 1)` to signal to the kernel that the process is allowed to be dumped.
-- The `/var/crashdumps/core` directory is backed by a `hostPath` PV, pointing to a directory on the node.
-
-**Workflow & Sample Output:**
-
-1.  **Trigger the crash:** Use `curl` to send a GET request to the `/crash` endpoint of the `host-coredump` route.
-    ~~~bash
-    export ROUTE_HOST=$(oc get route dotnet-memory-leak-route-host-coredump -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
-    curl http://$ROUTE_HOST/crash
-    ~~~
-
-2.  **Observe Logs and Pod Status:** The pod will terminate and enter a `CrashLoopBackOff` state. The logs will show the `Environment.FailFast` message.
-    ~~~bash
-    oc get pods -l app=dotnet-memory-leak-app-host-coredump
-    # NAME                                                    READY   STATUS             RESTARTS      AGE
-    # dotnet-memory-leak-app-host-coredump-66d48744b5-994g2   0/1     CrashLoopBackOff   2 (28s ago)   10m
-    ~~~
-
-3.  **Verify Dump File on the Host:** SSH into the MicroShift/OpenShift node and check the `hostPath` directory for the newly created dump file.
-    ~~~bash
-    # On the OpenShift/MicroShift node
-    ls -la /var/crashdumps/core
-    
-    # total 8052
-    # -rw-r--r--. 1 root root 8242049 Nov  6 16:51 'host-dump.dotnet.1.1762444288.dmp'
-    ~~~
+# Check host-level dumps (if configured)
+oc rsh "$POD_NAME" -c dotnet-app -- ls -l /var/crashdumps/
+~~~
 
 Optional: Analyze the dump locally using dotnet-dump
 
@@ -1035,16 +1034,25 @@ The application includes comprehensive health checks to ensure reliable operatio
 # Test health endpoints
 export ROUTE_HOST=$(oc get route dotnet-memory-leak-route -n dotnet-memory-leak-app -o jsonpath='{.spec.host}')
 
-# Test liveness probe
-curl -f http://$ROUTE_HOST/healthz
+# Test liveness probe - should return HTTP 200 OK with "Healthy" status
+curl -v http://$ROUTE_HOST/healthz
+# Expected output: HTTP/1.1 200 OK
+# Response body: {"status":"Healthy","totalDuration":"00:00:00.0001234"}
 
-# Test readiness probe  
-curl -f http://$ROUTE_HOST/readyz
+# Test readiness probe - should return HTTP 200 OK with "Healthy" status
+curl -v http://$ROUTE_HOST/readyz
+# Expected output: HTTP/1.1 200 OK
+# Response body: {"status":"Healthy","totalDuration":"00:00:00.0001234"}
 
 # Check pod status and probe results
 oc get pods -n dotnet-memory-leak-app -o wide
 oc describe pod <pod-name> -n dotnet-memory-leak-app
 ```
+
+**Understanding Health Check Responses:**
+- **HTTP 200 OK**: Application is healthy and ready to serve traffic
+- **HTTP 503 Service Unavailable**: Application is unhealthy (rarely occurs in this simple app)
+- **Connection refused**: Pod is not running or network policy is blocking access
 
 ### 6.5.2. Security Posture Validation
 

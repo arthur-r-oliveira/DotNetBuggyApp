@@ -186,4 +186,64 @@ app.MapGet("/crash", () =>
 .WithName("Crash")
 .WithOpenApi();
 
+// --- Edge-collapse stressors (1n1-microshift layered-defense test, T25) ---
+// Both return 202 at once and run in the background, so the caller never
+// hangs. Bounded by their parameters, unlike /triggerMemoryLeak.
+
+// Burn CPU on `threads` busy loops for `seconds`. With a CPU limit the
+// container is throttled (CFS), never killed.
+app.MapGet("/triggerCpuSpike", (HttpContext context, int? seconds, int? threads) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    int secs = Math.Clamp(seconds ?? 60, 1, 3600);
+    int n = Math.Clamp(threads ?? Environment.ProcessorCount, 1, 256);
+    var until = DateTime.UtcNow.AddSeconds(secs);
+    for (int i = 0; i < n; i++)
+    {
+        new Thread(() =>
+        {
+            double x = 0;
+            while (DateTime.UtcNow < until) { x = Math.Sqrt(x + 1.0); }
+        }) { IsBackground = true }.Start();
+    }
+    logger.LogWarning($"CPU spike started: {n} threads for {secs}s");
+    return Results.Accepted(value: $"CPU spike: {n} threads for {secs}s");
+})
+.WithName("TriggerCpuSpike")
+.WithOpenApi();
+
+// Write `mb` MiB in 1 MiB chunks to `path` (default /tmp), flushing each
+// chunk to disk. With an ephemeral-storage limit or an emptyDir sizeLimit
+// the kubelet evicts the pod; stops early on ENOSPC.
+app.MapGet("/triggerDiskFill", (HttpContext context, int? mb, string? path) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    int total = Math.Clamp(mb ?? 1024, 1, 1024 * 1024);
+    string dir = string.IsNullOrWhiteSpace(path) ? "/tmp" : path;
+    string file = Path.Combine(dir, $"fill-{DateTime.UtcNow:yyyyMMddHHmmss}.bin");
+    _ = Task.Run(() =>
+    {
+        var chunk = new byte[1024 * 1024];
+        Random.Shared.NextBytes(chunk); // incompressible
+        int written = 0;
+        try
+        {
+            using var fs = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20, FileOptions.WriteThrough);
+            for (; written < total; written++)
+            {
+                fs.Write(chunk, 0, chunk.Length);
+                fs.Flush(true);
+                if (written % 64 == 0) logger.LogWarning($"Disk fill: {written} MiB written to {file}");
+            }
+        }
+        catch (IOException ex)
+        {
+            logger.LogError(ex, $"Disk fill stopped after {written} MiB");
+        }
+    });
+    return Results.Accepted(value: $"Disk fill: {total} MiB to {file}");
+})
+.WithName("TriggerDiskFill")
+.WithOpenApi();
+
 app.Run();

@@ -82,6 +82,8 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 ### Core Application Files
 - **`Program.cs`**: Main application entry point with ASP.NET Core web API endpoints
   - `/triggerMemoryLeak`: Endpoint to initiate controlled memory allocation
+  - `/triggerCpuSpike?seconds=60&threads=N`: Busy loops on N threads for a bounded time (CPU throttling tests); returns 202
+  - `/triggerDiskFill?mb=N&path=/tmp`: Writes N MiB in flushed 1 MiB chunks (ephemeral-storage eviction tests); returns 202
   - `/readme`: Endpoint to render this README as a web page
   - `/crash`: Endpoint to trigger a segmentation fault for coredump testing
   - `/healthz`: Liveness health check endpoint (returns HTTP 200 OK when healthy)
@@ -103,6 +105,10 @@ This repository contains a comprehensive `.NET` memory leak simulation and diagn
 - **`Containerfile.hardened`**: Hardened production container with enhanced security configurations
   - **Use case**: Deployments requiring maximum security posture
   - **Image tag**: `v1-hardened`
+- **`Containerfile.hi`**: Built on Red Hat Hardened Images (`registry.access.redhat.com/hi/dotnet-sdk:8.0` to build, distroless `hi/aspnet-runtime:8.0` to run); no shell, non-root, any UID
+  - **Use case**: Edge resource-fencing tests (1n1-microshift layered defense)
+  - **Image tag**: `v2-hardened`
+  - **Note**: .NET caps its GC heap at 75% of the container memory limit, so a leak aborts the process itself (exit 134) before the kernel OOM-kills it. Set `DOTNET_GCHeapHardLimitPercent=0x64` to let it reach the limit and get a real `OOMKilled` (exit 137).
 - **`configure_core_dump.sh`**: Shell script for core dump configuration (deprecated for container use)
 
 ### Kubernetes Deployment Manifests (`kubernetes/` directory)
@@ -242,6 +248,8 @@ http://$ROUTE_HOST/swagger
 - `GET /healthz`: Liveness probe - returns HTTP 200 OK with "Healthy" status
 - `GET /readyz`: Readiness probe - returns HTTP 200 OK with "Healthy" status
 - `GET /triggerMemoryLeak`: Initiates memory leak simulation
+- `GET /triggerCpuSpike?seconds=60&threads=4`: Bounded CPU burn (202 Accepted, runs in the background)
+- `GET /triggerDiskFill?mb=400&path=/tmp`: Bounded disk write (202 Accepted, stops early on a full disk)
 - `GET /crash`: Triggers segmentation fault for testing coredump capture
 - `GET /readme`: Renders this README as HTML
 

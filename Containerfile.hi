@@ -1,0 +1,21 @@
+# DotNetBuggyApp on Red Hat Hardened Images (registry.access.redhat.com/hi/):
+# the SDK image builds, the distroless ASP.NET runtime image runs. No shell,
+# no package manager; runs as a non-root user and works with any UID
+# (OpenShift/MicroShift restricted SCC).
+#
+#   podman build -f Containerfile.hi -t quay.io/<namespace>/dotnet-memory-leak-app:v2-hardened .
+FROM registry.access.redhat.com/hi/dotnet-sdk:8.0 AS build
+# The SDK image runs as UID 65532; build under its writable HOME.
+WORKDIR /tmp/src
+COPY --chown=65532:0 *.csproj ./
+RUN dotnet restore
+COPY --chown=65532:0 . .
+RUN dotnet publish DotNetMemoryLeakApp.csproj -c Release -o /tmp/src/out --no-restore --no-self-contained
+
+FROM registry.access.redhat.com/hi/aspnet-runtime:8.0
+WORKDIR /app
+COPY --from=build /tmp/src/out/ /app/
+ENV ASPNETCORE_URLS=http://+:8881 \
+    DOTNET_RUNNING_IN_CONTAINER=true
+EXPOSE 8881
+ENTRYPOINT ["dotnet", "/app/DotNetMemoryLeakApp.dll"]
